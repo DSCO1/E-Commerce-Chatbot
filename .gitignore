@@ -1,0 +1,14 @@
+# Virtual environment
+.venv/
+
+# Environment files
+.env
+app/.env
+app/.env.backup
+
+# Python
+__pycache__/
+*.pyc
+
+# Logs
+*.log

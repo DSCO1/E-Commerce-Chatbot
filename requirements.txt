@@ -1,0 +1,10 @@
+pandas
+chromadb
+sentence-transformers
+groq
+python-dotenv
+semantic-router
+streamlit
+beautifulsoup4
+selenium
+lxml
