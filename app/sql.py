@@ -415,6 +415,9 @@ def sql_chain_structured(question):
                         return "I tried to search Flipkart live, but name resolution failed. Please check your internet connection.", []
                     elif "Connection timed out" in err_msg or "ERR_CONNECTION_TIMED_OUT" in err_msg:
                         return "I tried to search Flipkart live, but the connection timed out. Flipkart may be currently offline or blocking automated requests.", []
+                    elif "blocking automated requests" in err_msg or "403" in err_msg or "Forbidden" in err_msg:
+                        return f"I couldn't find **{search_term}** in our database, and Flipkart is currently blocking automated scraping from this server.\n\n👉 **Use the manual Flipkart Scraper in the left sidebar** — enter **'{search_term}'** as the search term and click **Start Scraping** to load live products into the database. Then ask me again!", []
+
 
         if 'product_link' in response.columns:
             response['product_link'] = response['product_link'].apply(lambda x: x.split('?')[0] if isinstance(x, str) else x)
@@ -470,51 +473,90 @@ def clean_search_term(term: str) -> str:
 
 
 def scrape_and_populate_db(search_term, limit=25):
-    """Scrape Flipkart search results using requests+BeautifulSoup.
-    No Selenium or ChromeDriver required — works on any server including Streamlit Cloud.
+    """Scrape Flipkart search results using Playwright headless browser.
+    Works on Streamlit Cloud — automatically installs Chromium on first run.
+    Uses a real browser so Flipkart bot detection is bypassed.
     """
-    import requests
-    from bs4 import BeautifulSoup
+    import subprocess
+    import sys
     import re
+    import time
     import random
+    from bs4 import BeautifulSoup
 
-    HEADERS_LIST = [
-        {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-            "Accept-Language": "en-US,en;q=0.9",
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
-            "Accept-Encoding": "gzip, deflate, br",
-            "Connection": "keep-alive",
-        },
-        {
-            "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-            "Accept-Language": "en-IN,en;q=0.9",
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
-        },
-        {
-            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15",
-            "Accept-Language": "en-US,en;q=0.9",
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        },
-    ]
-
-    session = requests.Session()
-    headers = random.choice(HEADERS_LIST)
-
-    search_query_clean = search_term.replace('-', ' ')
-    website_link = f"https://www.flipkart.com/search?q={search_query_clean.replace(' ', '+')}&sort=popularity"
-
+    # Install Playwright Chromium binary if not already present
     try:
-        resp = session.get(website_link, headers=headers, timeout=15)
-        resp.raise_for_status()
-    except requests.exceptions.ConnectionError as e:
-        raise RuntimeError("Internet connection is disconnected. Please check your network connection and try again.") from e
-    except requests.exceptions.Timeout as e:
-        raise RuntimeError("Connection timed out. Flipkart might be unreachable or blocking the request.") from e
-    except requests.exceptions.HTTPError as e:
-        raise RuntimeError(f"Flipkart returned an error: {e}") from e
+        from playwright.sync_api import sync_playwright
+    except ImportError:
+        subprocess.run([sys.executable, '-m', 'pip', 'install', 'playwright'], check=True)
+        from playwright.sync_api import sync_playwright
 
-    soup = BeautifulSoup(resp.text, 'lxml')
+    # Ensure the Chromium browser binary is installed (safe to call multiple times)
+    try:
+        subprocess.run(
+            [sys.executable, '-m', 'playwright', 'install', 'chromium'],
+            capture_output=True, timeout=180
+        )
+    except Exception as install_err:
+        print(f"[SCRAPER] playwright install warning: {install_err}")
+
+    search_query_clean = search_term.replace('-', ' ').strip()
+    query_encoded = search_query_clean.replace(' ', '+')
+    search_url = f"https://www.flipkart.com/search?q={query_encoded}&sort=popularity"
+
+    print(f"[SCRAPER] Launching Playwright browser for: '{search_term}'")
+
+    html_content = ""
+    with sync_playwright() as p:
+        browser = p.chromium.launch(
+            headless=True,
+            args=[
+                '--no-sandbox',
+                '--disable-setuid-sandbox',
+                '--disable-dev-shm-usage',
+                '--disable-gpu',
+            ]
+        )
+        context = browser.new_context(
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+            viewport={"width": 1366, "height": 768},
+            locale="en-IN",
+            extra_http_headers={
+                "Accept-Language": "en-IN,en-GB;q=0.9,en-US;q=0.8,en;q=0.7",
+            }
+        )
+        page = context.new_page()
+
+        # Block images/fonts to speed up page load
+        def handle_route(route):
+            if route.request.resource_type in ["image", "font", "media", "stylesheet"]:
+                route.abort()
+            else:
+                route.continue_()
+        page.route("**/*", handle_route)
+
+        try:
+            page.goto(search_url, wait_until="domcontentloaded", timeout=30000)
+            # Wait briefly for product cards to appear
+            try:
+                page.wait_for_selector('a[href*="/p/"]', timeout=10000)
+            except Exception:
+                pass
+            time.sleep(1)
+            html_content = page.content()
+        except Exception as nav_err:
+            browser.close()
+            err = str(nav_err)
+            if "ERR_INTERNET_DISCONNECTED" in err or "net::ERR_" in err:
+                raise RuntimeError("Internet connection is disconnected. Please check your network connection and try again.")
+            raise RuntimeError(f"Failed to load Flipkart search page: {nav_err}")
+        finally:
+            browser.close()
+
+    if not html_content:
+        raise RuntimeError("Browser returned empty page content.")
+
+    soup = BeautifulSoup(html_content, 'lxml')
 
     # Flipkart uses several different card layouts — try multiple known selectors
     product_cards = (
@@ -608,15 +650,26 @@ def scrape_and_populate_db(search_term, limit=25):
 
             # --- Rating ---
             avg_rating = 0.0
-            total_ratings = 0
-            for sel in ['div.XQDdHH', 'span._1lRcqv', 'div._3LWZlK', 'div.gUuXy-']:
+            for sel in ['div.XQDdHH', 'div.MKiFS6', 'span._1lRcqv', 'div._3LWZlK', 'div.gUuXy-']:
                 el = card.select_one(sel)
                 if el:
                     try:
-                        avg_rating = float(el.get_text(strip=True))
+                        avg_rating = float(el.get_text(strip=True).replace('★', '').strip())
                         break
                     except ValueError:
                         pass
+            if avg_rating == 0.0:
+                for el in card.find_all(['div', 'span']):
+                    txt = el.get_text(strip=True).replace('★', '').strip()
+                    if re.match(r'^[1-5]\.[0-9]$', txt):
+                        try:
+                            avg_rating = float(txt)
+                            break
+                        except ValueError:
+                            pass
+
+            # --- Ratings Count ---
+            total_ratings = 0
             for sel in ['span.Wphh3N', 'span._2_R_DZ', 'div._3LWZlK span']:
                 el = card.select_one(sel)
                 if el:
@@ -627,10 +680,21 @@ def scrape_and_populate_db(search_term, limit=25):
                             break
                         except ValueError:
                             pass
+            if total_ratings == 0:
+                for el in card.find_all(['span', 'div']):
+                    txt = el.get_text(strip=True)
+                    if 'Ratings' in txt:
+                        m = re.search(r'([\d,]+)\s*Ratings', txt)
+                        if m:
+                            try:
+                                total_ratings = int(m.group(1).replace(',', ''))
+                                break
+                            except ValueError:
+                                pass
 
             # --- Image URL ---
             image_url = ''
-            for sel in ['img._396cs4', 'img._2r_T1I', 'img.DByoR4', 'img._0DkuPH', 'img.jzoB4e']:
+            for sel in ['img._396cs4', 'img._2r_T1I', 'img.DByoR4', 'img._0DkuPH', 'img.jzoB4e', 'img.UCc1lI']:
                 img = card.select_one(sel)
                 if img:
                     src = img.get('src', '')
@@ -640,7 +704,7 @@ def scrape_and_populate_db(search_term, limit=25):
             if not image_url:
                 for img in card.find_all('img'):
                     src = img.get('src', '')
-                    if ('rukminim' in src or 'flixcart.com/image' in src) and not any(sz in src for sz in exclude_img_sizes) and 'logo' not in src.lower():
+                    if src and ('rukminim' in src or 'flixcart.com/image' in src) and not any(sz in src for sz in exclude_img_sizes) and 'logo' not in src.lower():
                         image_url = src
                         break
 
