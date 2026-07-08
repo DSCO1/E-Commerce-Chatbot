@@ -809,19 +809,29 @@ with col_chat:
                         border: 1.5px solid #3e445b !important;
                         border-radius: 28px !important;
                         padding: 6px 12px 6px 20px !important;
-                        display: flex !important;
-                        align-items: center !important;
-                        gap: 0 !important;
                         box-shadow: 0 4px 20px rgba(0,0,0,0.3) !important;
                     }
                     div[data-testid="stForm"]:focus-within {
                         border-color: #635bff !important;
                         box-shadow: 0 0 0 1px #635bff, 0 4px 24px rgba(99,91,255,0.15) !important;
                     }
+                    div[data-testid="stForm"] > div[data-testid="stVerticalBlock"] {
+                        width: 100% !important;
+                    }
                     div[data-testid="stForm"] div[data-testid="stHorizontalBlock"] {
                         align-items: center !important;
                         width: 100% !important;
                         gap: 8px !important;
+                    }
+                    div[data-testid="stForm"] div[data-testid="column"]:first-child {
+                        flex: 1 1 auto !important;
+                        width: auto !important;
+                        max-width: 100% !important;
+                    }
+                    div[data-testid="stForm"] div[data-testid="column"]:last-child {
+                        flex: 0 0 auto !important;
+                        width: auto !important;
+                        max-width: 100% !important;
                     }
                     /* Remove nested text input boundary and styling */
                     div[data-testid="stForm"] div[data-testid="stTextInput"] label {
