@@ -627,9 +627,21 @@ Database Catalog
 {total_products} items across {total_cat} categories
 </div>""", unsafe_allow_html=True)
     
-    grid_html = '<div class="catalog-card-grid">'
+    if "show_all_categories" not in st.session_state:
+        st.session_state["show_all_categories"] = False
+
+    # Slice categories based on state
     if not df_categories.empty:
-        for _, cat_row in df_categories.iterrows():
+        if st.session_state["show_all_categories"]:
+            cats_to_show = df_categories
+        else:
+            cats_to_show = df_categories.head(10)
+    else:
+        cats_to_show = pd.DataFrame()
+
+    grid_html = '<div class="catalog-card-grid">'
+    if not cats_to_show.empty:
+        for _, cat_row in cats_to_show.iterrows():
             cat_name = cat_row['name']
             cat_slug = cat_row['slug']
             cat_image = cat_row['image'] if cat_row['image'] else default_image
@@ -644,6 +656,13 @@ Database Catalog
     grid_html += '</div>'
     
     st.markdown(grid_html, unsafe_allow_html=True)
+
+    # Show more/less toggle button
+    if total_cat > 10:
+        btn_label = "🔼 Show Less" if st.session_state["show_all_categories"] else f"🔽 Show All ({total_cat} Categories)"
+        if st.button(btn_label, key="toggle_cats_btn", use_container_width=True):
+            st.session_state["show_all_categories"] = not st.session_state["show_all_categories"]
+            st.rerun()
     
     st.markdown(f"""
 <a href="?category=" target="_self" class="catalog-view-all-btn">
