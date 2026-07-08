@@ -6,7 +6,6 @@ chromadb==0.5.23
 sentence-transformers==3.0.1
 transformers==4.44.2
 huggingface-hub==0.24.6
-torch==2.4.1
 
 semantic-router==0.0.72
 
@@ -14,7 +13,8 @@ groq==0.31.0
 python-dotenv==1.1.1
 
 beautifulsoup4==4.13.4
-selenium==4.34.2
 lxml==6.0.0
-torch==2.4.1
-torchvision==0.19.1
+
+# torch CPU-only (much smaller for cloud deployment)
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch==2.4.1+cpu

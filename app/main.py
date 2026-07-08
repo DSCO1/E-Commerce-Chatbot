@@ -2,14 +2,29 @@ import os
 from dotenv import load_dotenv
 from pathlib import Path
 
-# Load environment variables from .env
+# Load environment variables from .env (local dev)
 env_path = Path(__file__).parent / ".env"
 load_dotenv(dotenv_path=env_path)
 if not os.getenv("GROQ_API_KEY"):
     load_dotenv(dotenv_path=Path(__file__).parent.parent / ".env")
 
-# Force Hugging Face offline mode to prevent startup network hang when loading encoders
-os.environ["HF_HUB_OFFLINE"] = "1"
+# Streamlit Cloud secrets fallback: if .env didn't load, try st.secrets
+if not os.getenv("GROQ_API_KEY"):
+    try:
+        import streamlit as _st
+        if hasattr(_st, "secrets"):
+            for key in ("GROQ_API_KEY", "GROQ_MODEL"):
+                if key in _st.secrets:
+                    os.environ[key] = _st.secrets[key]
+    except Exception:
+        pass
+
+# Force Hugging Face offline mode ONLY if the model is already cached locally.
+# On fresh cloud deploys, we need to allow the first download.
+_hf_cache = Path.home() / ".cache" / "huggingface" / "hub"
+_model_cached = (_hf_cache / "models--sentence-transformers--all-MiniLM-L6-v2").exists()
+if _model_cached:
+    os.environ["HF_HUB_OFFLINE"] = "1"
 os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"
 
 import importlib
