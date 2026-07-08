@@ -9,7 +9,12 @@ from pandas import DataFrame
 
 load_dotenv(Path(__file__).parent / ".env")
 
+FALLBACK_MODELS = ["llama-3.1-8b-instant", "llama-3.3-70b-versatile", "meta-llama/llama-4-scout-17b-16e-instruct"]
+
 GROQ_MODEL = os.getenv('GROQ_MODEL')
+if not GROQ_MODEL:
+    GROQ_MODEL = FALLBACK_MODELS[0]
+    os.environ['GROQ_MODEL'] = GROQ_MODEL
 
 db_path = Path(__file__).parent / "db.sqlite"
 
@@ -122,7 +127,7 @@ For example:
 
 import time
 
-FALLBACK_MODELS = ["llama-3.1-8b-instant", "llama-3.3-70b-versatile", "meta-llama/llama-4-scout-17b-16e-instruct"]
+
 
 def retry_on_rate_limit(max_retries=8, initial_delay=1):
     """Auto-retry on rate limit / decommissioned errors.
