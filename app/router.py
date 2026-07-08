@@ -2,9 +2,9 @@ from semantic_router import Route, SemanticRouter
 from semantic_router.encoders import HuggingFaceEncoder
 
 encoder = HuggingFaceEncoder(
-    name="sentence-transformers/all-MiniLM-L6-v2"
+    name="sentence-transformers/all-MiniLM-L6-v2",
+    device="cpu"
 )
-
 faq = Route(
     name='faq',
     utterances=[
