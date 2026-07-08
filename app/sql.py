@@ -470,341 +470,248 @@ def clean_search_term(term: str) -> str:
 
 
 def scrape_and_populate_db(search_term, limit=25):
-    from selenium import webdriver
-    from selenium.webdriver.common.by import By
-    from selenium.webdriver.support.ui import WebDriverWait
-    from selenium.webdriver.support import expected_conditions as EC
+    """Scrape Flipkart search results using requests+BeautifulSoup.
+    No Selenium or ChromeDriver required — works on any server including Streamlit Cloud.
+    """
+    import requests
     from bs4 import BeautifulSoup
-    import sqlite3
-    import pandas as pd
     import re
-    import time
+    import random
 
-    from selenium.webdriver.chrome.service import Service
-    import shutil
+    HEADERS_LIST = [
+        {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+            "Accept-Language": "en-US,en;q=0.9",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+            "Accept-Encoding": "gzip, deflate, br",
+            "Connection": "keep-alive",
+        },
+        {
+            "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+            "Accept-Language": "en-IN,en;q=0.9",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+        },
+        {
+            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15",
+            "Accept-Language": "en-US,en;q=0.9",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        },
+    ]
 
-    options = webdriver.ChromeOptions()
-    options.page_load_strategy = 'eager'
-    options.add_experimental_option("excludeSwitches", ["enable-automation"])
-    options.add_experimental_option('useAutomationExtension', False)
-    options.add_argument("--headless=new")
-    options.add_argument("--disable-gpu")
-    options.add_argument("--no-sandbox")
-    options.add_argument("--disable-dev-shm-usage")
-    options.add_argument("--window-size=1920,1080")
-    options.add_argument("--disable-blink-features=AutomationControlled")
-    options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+    session = requests.Session()
+    headers = random.choice(HEADERS_LIST)
 
-    # Auto-detect Streamlit Cloud's Chromium and ChromeDriver binary (Linux)
-    chromium_path = shutil.which("chromium") or shutil.which("chromium-browser")
-    if chromium_path:
-        options.binary_location = chromium_path
-
-    chrome_driver_path = shutil.which("chromedriver")
-    if chrome_driver_path:
-        service = Service(executable_path=chrome_driver_path)
-        driver = webdriver.Chrome(service=service, options=options)
-    else:
-        driver = webdriver.Chrome(options=options)
-    driver.set_page_load_timeout(15)
-    driver.execute_cdp_cmd("Page.addScriptToEvaluateOnNewDocument", {
-        "source": "Object.defineProperty(navigator, 'webdriver', {get: () => undefined})"
-    })
+    search_query_clean = search_term.replace('-', ' ')
+    website_link = f"https://www.flipkart.com/search?q={search_query_clean.replace(' ', '+')}&sort=popularity"
 
     try:
-        # Step 1: Search Flipkart for the product category
-        search_query_clean = search_term.replace('-', ' ')
-        website_link = f"https://www.flipkart.com/search?q={search_query_clean.replace(' ', '+')}"
-        try:
-            driver.get(website_link)
-        except Exception as e:
-            err_msg = str(e)
-            if "ERR_INTERNET_DISCONNECTED" in err_msg:
-                raise RuntimeError("Internet connection is disconnected. Please check your network connection and try again.") from e
-            elif "ERR_NAME_NOT_RESOLVED" in err_msg:
-                raise RuntimeError("DNS name resolution failed. Please verify your internet connection.") from e
-            elif "ERR_CONNECTION_TIMED_OUT" in err_msg:
-                raise RuntimeError("Connection timed out. Flipkart might be unreachable or blocking request.") from e
-            else:
-                raise RuntimeError(f"Failed to load search page: {err_msg}") from e
-        time.sleep(3)
+        resp = session.get(website_link, headers=headers, timeout=15)
+        resp.raise_for_status()
+    except requests.exceptions.ConnectionError as e:
+        raise RuntimeError("Internet connection is disconnected. Please check your network connection and try again.") from e
+    except requests.exceptions.Timeout as e:
+        raise RuntimeError("Connection timed out. Flipkart might be unreachable or blocking the request.") from e
+    except requests.exceptions.HTTPError as e:
+        raise RuntimeError(f"Flipkart returned an error: {e}") from e
 
-        # Wait for product links to load
-        try:
-            WebDriverWait(driver, 15).until(
-                EC.presence_of_element_located((By.CSS_SELECTOR, 'a[href*="/p/"]'))
-            )
-        except Exception:
-            print("No products found on search page")
-            return 0
+    soup = BeautifulSoup(resp.text, 'lxml')
 
-        # Collect unique product links from search results
-        soup = BeautifulSoup(driver.page_source, 'lxml')
-        product_anchors = soup.find_all('a', href=re.compile(r'/p/itm'))
-        
-        all_links = []
-        seen = set()
-        for a in product_anchors:
-            href = a.get('href', '')
-            # Build full URL, strip query params for dedup
-            base_href = href.split('?')[0]
-            if base_href in seen:
+    # Flipkart uses several different card layouts — try multiple known selectors
+    product_cards = (
+        soup.select('div[data-id]') or
+        soup.select('div._1AtVbE') or
+        soup.select('div.tUxRFH') or
+        soup.select('div._4ddWXP')
+    )
+
+    complete_product_details = []
+    seen_ids = set()
+    exclude_img_sizes = ['/70/70/', '/80/80/', '/160/210/', '/120/120/', '/120/150/', '/40/40/', '/48/48/', '/30/30/', '/24/24/', '/10/10/']
+
+    for card in product_cards:
+        if len(complete_product_details) >= limit:
+            break
+        try:
+            # --- Product Link ---
+            link_tag = card.select_one('a[href*="/p/itm"]') or card.select_one('a[href*="/p/"]')
+            if not link_tag:
                 continue
-            seen.add(base_href)
+            href = link_tag.get('href', '')
+            base_href = href.split('?')[0]
             full_url = f"https://www.flipkart.com{base_href}" if base_href.startswith('/') else base_href
-            all_links.append(full_url)
-            if len(all_links) >= limit:
-                break
+            if base_href in seen_ids:
+                continue
+            seen_ids.add(base_href)
 
-        # Step 2: Visit each product page and extract details using BeautifulSoup
-        complete_product_details = []
-        for product_page_link in all_links:
-            try:
-                driver.get(product_page_link)
-                time.sleep(2)
-                
-                page_soup = BeautifulSoup(driver.page_source, 'lxml')
-                page_text = page_soup.get_text(separator=' ', strip=True)
-
-                # --- Title ---
-                title = ''
-                # Strategy 1: <title> tag (most reliable - always has full product name)
-                title_tag = page_soup.find('title')
-                if title_tag:
-                    raw_title = title_tag.get_text(strip=True)
-                    # Flipkart title format: "Product Name - Buy Product Name ... | Flipkart.com"
-                    # Take everything before the first " - Buy" or " | Flipkart" or "- Price"
-                    for sep in [' - Buy ', ' | Flipkart', '- Price']:
-                        if sep in raw_title:
-                            raw_title = raw_title.split(sep)[0]
-                            break
-                    title = raw_title.strip()
-
-                # Strategy 2: h1 or span with product title classes
-                if not title or len(title) < 5:
-                    for selector in ['h1', 'span.VU-ZEz', 'h1.yhB1nd']:
-                        el = page_soup.select_one(selector)
-                        if el and el.get_text(strip=True):
-                            title = el.get_text(strip=True)
-                            break
-
-                if not title:
-                    print(f"Skipping - no title found for {product_page_link}")
-                    continue
-
-                # Clean parentheticals like "(16 GB/512 GB SSD)" - keep them for searchability
-                # Only remove color variants like "(3 Colors)"
-                title = re.sub(r'\s*\(\d+\s*Colors?\)', '', title, flags=re.IGNORECASE)
-
-                # --- Brand ---
-                brand = ''
-                for selector in ['span.mEh187', 'span.B1GeXm', 'span.G6Xh1M']:
-                    el = page_soup.select_one(selector)
-                    if el and el.get_text(strip=True):
-                        brand = el.get_text(strip=True)
+            # --- Title ---
+            title = ''
+            for sel in ['div.KzDlHZ', 'a.IRpwTa', 'div.wjcEIp', 'p.txdYFf', 'div._4rR01T', 'a.s1Q9rs', 'div.col-12-12']:
+                el = card.select_one(sel)
+                if el and el.get_text(strip=True):
+                    title = el.get_text(strip=True)
+                    break
+            if not title:
+                for a in card.find_all('a'):
+                    t = a.get_text(strip=True)
+                    if len(t) > 15:
+                        title = t
                         break
-                if not brand:
-                    brand = title.split(' ')[0] if title else 'Generic'
+            if not title or len(title) < 5:
+                continue
+            title = re.sub(r'\s*\(\d+\s*Colors?\)', '', title, flags=re.IGNORECASE)
 
-                # --- Price ---
-                price = 0
-                # Look for the selling price (first ₹ amount on the page in price divs)
-                for selector in ['div.Nx9bqj', 'div._30jeq3', 'div.CxhGGd']:
-                    el = page_soup.select_one(selector)
-                    if el:
-                        price_text = el.get_text(strip=True)
-                        nums = re.findall(r'\d+', price_text.replace(',', ''))
-                        if nums:
-                            price = int(''.join(nums))
-                            break
-                # Fallback: regex on page text
-                if price == 0:
-                    price_match = re.search(r'₹\s*([0-9,]+)', page_text)
-                    if price_match:
-                        price = int(price_match.group(1).replace(',', ''))
+            # --- Brand ---
+            brand = ''
+            for sel in ['div.syl9yP', 'div.J8gu7b', 'span._2H1yS7', 'div._2WkVRV']:
+                el = card.select_one(sel)
+                if el and el.get_text(strip=True):
+                    brand = el.get_text(strip=True)
+                    break
+            if not brand:
+                brand = title.split(' ')[0] if title else 'Generic'
 
-                # --- Discount ---
-                discount = 0.0
-                for selector in ['div.UkUFwK', 'div._3Ay6B1']:
-                    el = page_soup.select_one(selector)
-                    if el:
-                        disc_text = el.get_text(strip=True)
-                        disc_match = re.search(r'(\d+)\s*%', disc_text)
-                        if disc_match:
-                            discount = int(disc_match.group(1)) / 100
-                            break
-                if discount == 0.0:
-                    disc_match = re.search(r'(\d+)\s*%\s*off', page_text, re.IGNORECASE)
-                    if disc_match:
-                        discount = int(disc_match.group(1)) / 100
+            # --- Price ---
+            price = 0
+            for sel in ['div.Nx9bqj', 'div._30jeq3', 'div.hl05eU div.Nx9bqj']:
+                el = card.select_one(sel)
+                if el:
+                    nums = re.findall(r'\d+', el.get_text(strip=True).replace(',', ''))
+                    if nums:
+                        price = int(nums[0])
+                        break
+            if price == 0:
+                pm = re.search(r'\u20b9\s*([\d,]+)', card.get_text(separator=' ', strip=True))
+                if pm:
+                    price = int(pm.group(1).replace(',', ''))
 
-                # --- Rating ---
-                avg_rating = 0.0
-                total_ratings = 0
+            # --- Discount ---
+            discount = 0.0
+            for sel in ['div.UkUFwK', 'div._3Ay6B1', 'span.UkUFwK']:
+                el = card.select_one(sel)
+                if el:
+                    dm = re.search(r'(\d+)\s*%', el.get_text(strip=True))
+                    if dm:
+                        discount = int(dm.group(1)) / 100
+                        break
+            if discount == 0.0:
+                dm = re.search(r'(\d+)\s*%\s*off', card.get_text(separator=' ', strip=True), re.IGNORECASE)
+                if dm:
+                    discount = int(dm.group(1)) / 100
 
-                # Primary: "Ratings and reviews X.X ... based on N ratings"
-                rating_review_match = re.search(
-                    r'Ratings?\s+and\s+reviews?\s+([1-5]\.?\d?)\s+.*?based\s+on\s+([\d,]+)\s+ratings?',
-                    page_text, re.IGNORECASE
-                )
-                if rating_review_match:
+            # --- Rating ---
+            avg_rating = 0.0
+            total_ratings = 0
+            for sel in ['div.XQDdHH', 'span._1lRcqv', 'div._3LWZlK', 'div.gUuXy-']:
+                el = card.select_one(sel)
+                if el:
                     try:
-                        avg_rating = float(rating_review_match.group(1))
-                        total_ratings = int(rating_review_match.group(2).replace(',', ''))
-                    except (ValueError, IndexError):
+                        avg_rating = float(el.get_text(strip=True))
+                        break
+                    except ValueError:
                         pass
-
-                # Fallback 1: CSS selectors (older Flipkart layout)
-                if avg_rating == 0.0:
-                    for selector in ['div.XQDdHH', 'div._3LWZlK']:
-                        el = page_soup.select_one(selector)
-                        if el:
-                            try:
-                                avg_rating = float(el.get_text(strip=True))
-                            except ValueError:
-                                pass
+            for sel in ['span.Wphh3N', 'span._2_R_DZ', 'div._3LWZlK span']:
+                el = card.select_one(sel)
+                if el:
+                    rt = re.search(r'([\d,]+)', el.get_text(strip=True))
+                    if rt:
+                        try:
+                            total_ratings = int(rt.group(1).replace(',', ''))
                             break
-
-                # Fallback 2: "X.X | Y,YYY Ratings" pattern
-                if avg_rating == 0.0:
-                    rating_pattern = re.search(r'([1-5]\.?\d?)\s*[|&]\s*([\d,]+)\s*Ratings?', page_text, re.IGNORECASE)
-                    if rating_pattern:
-                        try:
-                            avg_rating = float(rating_pattern.group(1))
-                            if total_ratings == 0:
-                                total_ratings = int(rating_pattern.group(2).replace(',', ''))
                         except ValueError:
                             pass
 
-                # Fallback 3: just find any "X.X" followed by rating context
-                if avg_rating == 0.0:
-                    simple_rating = re.search(r'([1-5]\.\d)\s+(?:Very Good|Good|Average|Poor|Excellent)', page_text)
-                    if simple_rating:
-                        try:
-                            avg_rating = float(simple_rating.group(1))
-                        except ValueError:
-                            pass
+            # --- Image URL ---
+            image_url = ''
+            for sel in ['img._396cs4', 'img._2r_T1I', 'img.DByoR4', 'img._0DkuPH', 'img.jzoB4e']:
+                img = card.select_one(sel)
+                if img:
+                    src = img.get('src', '')
+                    if src and 'logo' not in src.lower() and not any(sz in src for sz in exclude_img_sizes):
+                        image_url = src
+                        break
+            if not image_url:
+                for img in card.find_all('img'):
+                    src = img.get('src', '')
+                    if ('rukminim' in src or 'flixcart.com/image' in src) and not any(sz in src for sz in exclude_img_sizes) and 'logo' not in src.lower():
+                        image_url = src
+                        break
 
-                # Total ratings fallback
-                if total_ratings == 0:
-                    total_match = re.search(r'([\d,]+)\s*Ratings?', page_text, re.IGNORECASE)
-                    if total_match:
-                        try:
-                            total_ratings = int(total_match.group(1).replace(',', ''))
-                        except ValueError:
-                            pass
+            complete_product_details.append([
+                full_url, title, brand, price, discount, avg_rating, total_ratings, image_url, title
+            ])
+            print(f"  [OK] {brand} | {title[:60]}... | Rs.{price} | {discount*100:.0f}% off | Rating: {avg_rating} | Image: {bool(image_url)}")
 
-                # --- Image URL ---
-                image_url = ''
-                exclude_sizes = ['/70/70/', '/80/80/', '/160/210/', '/120/120/', '/120/150/', '/40/40/', '/48/48/', '/30/30/', '/24/24/', '/10/10/']
-                
-                # Check specific product detail selectors first
-                for selector in ['img._0DkuPH', 'img.DByoR4', 'img.jzoB4e', 'img.UHDDFP', 'img._53u2j-']:
-                    el = page_soup.select_one(selector)
-                    if el and el.get('src') and 'logo' not in el.get('src', '').lower():
-                        src = el.get('src')
-                        if not any(sz in src for sz in exclude_sizes):
-                            image_url = src
-                            break
-                
-                # Fallback to scanning all img tags, filtering out thumbnails/recommendations
-                if not image_url:
-                    for img in page_soup.find_all('img'):
-                        src = img.get('src', '')
-                        if ('rukminim2.flixcart.com/image/' in src or 'rukminim1.flixcart.com/image/' in src or '/xif0q/' in src) and 'logo' not in src.lower() and 'promo' not in src.lower():
-                            if not any(sz in src for sz in exclude_sizes):
-                                image_url = src
-                                break
+        except Exception as item_err:
+            print(f"Skipping card: {item_err}")
+            continue
 
-                description = page_text[:2000] if page_text else title
-                complete_product_details.append([
-                    product_page_link, title, brand, price, discount, avg_rating, total_ratings, image_url, description
-                ])
-                print(f"  [OK] {brand} | {title[:60]}... | Rs.{price} | {discount*100:.0f}% off | Rating: {avg_rating} | Image: {bool(image_url)}")
-
-            except Exception as item_err:
-                err_msg = str(item_err)
-                if "ERR_INTERNET_DISCONNECTED" in err_msg or "disconnected" in err_msg:
-                    raise RuntimeError("Internet connection was lost during scraping. Please check your network connection.") from item_err
-                print(f"Skipping product {product_page_link}: {item_err}")
-
-        # Insert/Update using modular components
-        if complete_product_details:
-            from database_service import get_connection
-            from category_classifier import CategoryClassifier
-            from category_normalizer import CategoryNormalizer
-            from category_manager import CategoryManager
-            from duplicate_detector import DuplicateDetector
-            from product_repository import ProductRepository
-            
-            classifier = CategoryClassifier()
-            category_manager = CategoryManager(get_connection)
-            product_repository = ProductRepository(get_connection)
-            
-            success_count = 0
-            for item in complete_product_details:
-                link, title, brand, price, discount, avg_rating, total_ratings, image_url, description = item
-                
-                # Extract clean brand/title
-                brand = str(brand).strip()
-                title = str(title).strip()
-                if not title:
-                    continue
-                    
-                product_id = DuplicateDetector.extract_product_id(link, title)
-                product_data = {
-                    "product_id": product_id,
-                    "product_link": link,
-                    "title": title,
-                    "brand": brand,
-                    "price": price,
-                    "discount": discount,
-                    "avg_rating": avg_rating,
-                    "rating": avg_rating,
-                    "total_ratings": total_ratings,
-                    "availability": "In Stock",
-                    "image": image_url,
-                    "image_url": image_url,
-                    "description": description
-                }
-                
-                # Dynamic Category detection and creation
-                category_name, confidence, source, reason = classifier.classify(product_data)
-                normalized_cat = CategoryNormalizer.normalize(category_name)
-                
-                # If classified as "Others", fallback to clean search term candidate
-                if normalized_cat == "Others":
-                    candidate = clean_search_term(search_term)
-                    if candidate != "Others":
-                        normalized_cat = CategoryNormalizer.normalize(candidate)
-                        source = "Search_Term_Fallback"
-                        reason = f"Classification is 'Others' (low confidence). Using cleaned search query '{search_term}' to assign to dynamic category '{normalized_cat}'."
-                        confidence = 0.50 # Moderate confidence for search term fallback
-                
-                # Fetch or create
-                category_id, slug = category_manager.get_or_create_category(normalized_cat)
-                
-                product_data["category_id"] = category_id
-                product_data["category_name"] = normalized_cat
-                product_data["confidence_score"] = confidence
-                product_data["classification_source"] = source
-                
-                # Save product in DB (handles insert/update correctly)
-                product_repository.save_product(product_data)
-                success_count += 1
-                
-                # Detailed category scoring log (Requirement 11)
-                print(f"\n[SCRAPER-PIPELINE] Product: {title[:50]}...")
-                print(f"  Detected Category: {normalized_cat} (Confidence: {confidence*100:.1f}%)")
-                print(f"  Reason: {reason}")
-                
-            # Recalculate category counts
-            category_manager.recalculate_all_counts()
-            print(f"Successfully scraped, classified, and processed {success_count} products for '{search_term}'!")
-            return success_count
+    if not complete_product_details:
+        print(f"No product cards found for '{search_term}' — Flipkart may have changed its HTML structure or blocked the request.")
         return 0
-    finally:
-        driver.quit()
+
+    # Insert/Update using modular components
+    from database_service import get_connection
+    from category_classifier import CategoryClassifier
+    from category_normalizer import CategoryNormalizer
+    from category_manager import CategoryManager
+    from duplicate_detector import DuplicateDetector
+    from product_repository import ProductRepository
+
+    classifier = CategoryClassifier()
+    category_manager = CategoryManager(get_connection)
+    product_repository = ProductRepository(get_connection)
+
+    success_count = 0
+    for item in complete_product_details:
+        link, title, brand, price, discount, avg_rating, total_ratings, image_url, description = item
+        brand = str(brand).strip()
+        title = str(title).strip()
+        if not title:
+            continue
+
+        product_id = DuplicateDetector.extract_product_id(link, title)
+        product_data = {
+            "product_id": product_id,
+            "product_link": link,
+            "title": title,
+            "brand": brand,
+            "price": price,
+            "discount": discount,
+            "avg_rating": avg_rating,
+            "rating": avg_rating,
+            "total_ratings": total_ratings,
+            "availability": "In Stock",
+            "image": image_url,
+            "image_url": image_url,
+            "description": description
+        }
+
+        category_name, confidence, source, reason = classifier.classify(product_data)
+        normalized_cat = CategoryNormalizer.normalize(category_name)
+
+        if normalized_cat == "Others":
+            candidate = clean_search_term(search_term)
+            if candidate != "Others":
+                normalized_cat = CategoryNormalizer.normalize(candidate)
+                source = "Search_Term_Fallback"
+                reason = f"Classification is 'Others' (low confidence). Using cleaned search query '{search_term}' to assign to dynamic category '{normalized_cat}'."
+                confidence = 0.50
+
+        category_id, slug = category_manager.get_or_create_category(normalized_cat)
+        product_data["category_id"] = category_id
+        product_data["category_name"] = normalized_cat
+        product_data["confidence_score"] = confidence
+        product_data["classification_source"] = source
+
+        product_repository.save_product(product_data)
+        success_count += 1
+        print(f"\n[SCRAPER-PIPELINE] Product: {title[:50]}...")
+        print(f"  Detected Category: {normalized_cat} (Confidence: {confidence*100:.1f}%)")
+        print(f"  Reason: {reason}")
+
+    category_manager.recalculate_all_counts()
+    print(f"Successfully scraped, classified, and processed {success_count} products for '{search_term}'!")
+    return success_count
 
 
 def extract_specs_from_title(title):
