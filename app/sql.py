@@ -13,7 +13,35 @@ GROQ_MODEL = os.getenv('GROQ_MODEL')
 
 db_path = Path(__file__).parent / "db.sqlite"
 
-client_sql = Groq()
+# --------------- Multi-Key Pool ---------------
+# Reads GROQ_API_KEY, GROQ_API_KEY_2, GROQ_API_KEY_3, ... from .env
+def _load_api_keys():
+    keys = []
+    primary = os.getenv("GROQ_API_KEY")
+    if primary:
+        keys.append(primary)
+    for i in range(2, 11):  # support up to 10 keys
+        k = os.getenv(f"GROQ_API_KEY_{i}")
+        if k:
+            keys.append(k)
+    return keys if keys else [primary or ""]
+
+API_KEYS = _load_api_keys()
+_current_key_idx = 0
+
+def get_groq_client():
+    """Return a Groq client using the currently active API key."""
+    global _current_key_idx
+    return Groq(api_key=API_KEYS[_current_key_idx % len(API_KEYS)])
+
+def rotate_api_key():
+    """Advance to the next API key in the pool. Returns the new key index."""
+    global _current_key_idx
+    _current_key_idx = (_current_key_idx + 1) % len(API_KEYS)
+    print(f"[KEY-ROTATE] Switched to API key #{_current_key_idx + 1} of {len(API_KEYS)}")
+    return _current_key_idx
+
+client_sql = get_groq_client()
 
 sql_prompt = """You are an expert in understanding the database schema and generating SQL queries for a natural language question asked
 pertaining to the data you have. The schema is provided in the schema tags. 
@@ -35,15 +63,28 @@ So, make sure to use %LIKE% to find the brand in condition. Never use "ILIKE".
 
 CRITICAL QUERY ACCURACY RULES:
 1. ALWAYS FILTER BY PRODUCT TYPE: You MUST always identify the product type or category (e.g. laptop, cooler, fan, shoe, watch, phone, refrigerator, washing machine, AC, etc.) from the user's question and search for it in the 'title' column. Never write a query without filtering the product category, otherwise it will return incorrect types of products (e.g., returning air coolers when asked for a laptop).
-2. MULTI-WORD CATEGORIES: If the product category contains multiple words (like "smart tv", "running shoes", "gaming laptop", "air cooler", "washing machine"), search for each of them individually in the 'title' column using AND (e.g. for 'gaming laptop' use: `title LIKE '%gaming%' AND title LIKE '%laptop%'`). 
+2. STRICT CATEGORY EXCLUSION RULES (CRITICAL):
+   - LAPTOP EXCLUSIONS: When the user asks for a "laptop", "notebook", or "chromebook", you MUST search for them but strictly exclude any accessory products using `NOT LIKE` conditions:
+     `title LIKE '%laptop%' AND title NOT LIKE '%speaker%' AND title NOT LIKE '%soundbar%' AND title NOT LIKE '%case%' AND title NOT LIKE '%cover%' AND title NOT LIKE '%bag%' AND title NOT LIKE '%sleeve%' AND title NOT LIKE '%adapter%' AND title NOT LIKE '%charger%' AND title NOT LIKE '%cable%' AND title NOT LIKE '%stand%' AND title NOT LIKE '%mouse%' AND title NOT LIKE '%keyboard%' AND title NOT LIKE '%headphone%' AND title NOT LIKE '%earphone%'`
+   - FAN EXCLUSIONS: When the user asks for a "fan" (such as ceiling fans, exhaust fans, pedestal fans, wall fans), you MUST search for `fan` but strictly exclude air coolers, air conditioners, heaters, and cases using `NOT LIKE` conditions:
+     `title LIKE '%fan%' AND title NOT LIKE '%cooler%' AND title NOT LIKE '%ac%' AND title NOT LIKE '%conditioner%' AND title NOT LIKE '%heater%' AND title NOT LIKE '%case%' AND title NOT LIKE '%cover%'`
+   - AIR COOLER EXCLUSIONS: When the user asks for a "cooler" or "air cooler", you MUST search for `cooler` but exclude stand-alone fans using `NOT LIKE`:
+     `title LIKE '%cooler%' AND title NOT LIKE '%ceiling fan%' AND title NOT LIKE '%exhaust fan%' AND title NOT LIKE '%pedestal fan%'`
+   - FOOTBALL EXCLUSIONS: When the user asks for a "football" or "soccer", you MUST search for them but strictly exclude TVs, televisions, board games, chess sets, and toys using `NOT LIKE` conditions:
+     `title LIKE '%football%' AND title NOT LIKE '%tv%' AND title NOT LIKE '%television%' AND title NOT LIKE '%chess%' AND title NOT LIKE '%board game%' AND title NOT LIKE '%toy%' AND title NOT LIKE '%game%'`
+3. MULTI-WORD CATEGORIES: If the product category contains multiple words (like "smart tv", "running shoes", "gaming laptop", "air cooler", "washing machine"), search for each of them individually in the 'title' column using AND (e.g. for 'gaming laptop' use: `title LIKE '%gaming%' AND title LIKE '%laptop%'`). 
    CRITICAL WARNING: Never search for a multi-word category as a single string (e.g. `title LIKE '%smart tv%'` or `title LIKE '%air cooler%'`) because other words might be in between (e.g., 'Smart Google TV' or 'Air Personal Cooler'). You MUST always split them into separate LIKE clauses joined by AND (e.g., for smart tv use: `title LIKE '%smart%' AND title LIKE '%tv%'`). Do NOT just search for one word like '%gaming%', as it will return other gaming accessories (e.g. gaming mice) instead of laptops.
-3. PRECISE AC / AIR CONDITIONER FILTER: For "AC", "air conditioner", or "split ac", search using:
+4. PRECISE AC / AIR CONDITIONER FILTER: For "AC", "air conditioner", or "split ac", search using:
    `(title LIKE '%air conditioner%' OR title LIKE '%air-conditioner%' OR title LIKE '% ac %' OR title LIKE 'ac %' OR title LIKE '% ac' OR title LIKE '%split ac%' OR title LIKE '%window ac%')`
    WARNING: Never use `title LIKE '%ac%'` (without word boundaries/spaces), because this raw substring matches unrelated words like 'capacity', 'compact', 'bacterial', 'black', and 'package', which will return air coolers and bags instead of air conditioners.
-4. SYNONYMS: Use OR conditions for synonyms. For example:
+5. SYNONYMS: Use OR conditions for synonyms. For example:
    - For "fridge" or "refrigerator", search using: `(title LIKE '%fridge%' OR title LIKE '%refrigerator%')`
-5. PRECISE PHONE / SMARTPHONE / MOBILE FILTER: E-commerce phone listings often omit the words "phone" or "smartphone" and instead use model/brand names (e.g., "Samsung Galaxy F70e 5G", "Nothing Phone (3)", "iPhone 15"). When the user asks for a "phone", "smartphone", or "mobile", you MUST use the exact parenthesized format below to group the OR conditions together, otherwise operator precedence will cause incorrect results. Never omit the outer parentheses of the OR conditions:
+6. PRECISE PHONE / SMARTPHONE / MOBILE FILTER: E-commerce phone listings often omit the words "phone" or "smartphone" and instead use model/brand names (e.g., "Samsung Galaxy F70e 5G", "Nothing Phone (3)", "iPhone 15"). When the user asks for a "phone", "smartphone", or "mobile", you MUST use the exact parenthesized format below to group the OR conditions together, otherwise operator precedence will cause incorrect results. Never omit the outer parentheses of the OR conditions:
    `((title LIKE '%phone%' OR title LIKE '%smartphone%' OR title LIKE '%mobile%' OR title LIKE '%galaxy%' OR title LIKE '%iphone%' OR title LIKE '%5g%' OR title LIKE '%gb storage%') AND title NOT LIKE '%laptop%' AND title NOT LIKE '%chromebook%' AND title NOT LIKE '%notebook%' AND title NOT LIKE '%case%' AND title NOT LIKE '%cover%' AND title NOT LIKE '%adapter%')`
+7. HYPHENATED WORDS OR MODEL CODES (CRITICAL): If the user question contains any hyphenated terms, model codes, or combined alphanumeric descriptors (e.g., "samsung-s24", "oneplus-12r", "split-ac", "s24-ultra"), you MUST split them at the hyphen or word boundaries and search for each term/code individually using AND operators (e.g., `title LIKE '%samsung%' AND title LIKE '%s24%'`). Never search for hyphenated terms as a single literal string (like `title LIKE '%samsung-s24%'` or `title LIKE '%s24-ultra%'`) because product titles in the database do not contain hyphens and instead list them as separate words (e.g., "Samsung Galaxy S24 Ultra").
+8. COMPOUND AND SPLIT WORDS (CRITICAL): E-commerce queries often use compound terms (e.g., "backcover", "powerbank", "smartwatch", "earphone", "aircooler", "soundbar") where listings in the database use separate words (e.g., "back cover", "power bank", "smart watch", "ear phone", "air cooler", "sound bar"). When the user asks for such terms, you MUST search for both the compound version and the split version using OR and AND conditions. For example, for "backcover" or "back cover", you MUST use: `(title LIKE '%backcover%' OR (title LIKE '%back%' AND title LIKE '%cover%'))`. Similarly, for "powerbank", use: `(title LIKE '%powerbank%' OR (title LIKE '%power%' AND title LIKE '%bank%'))`.
+
+CRITICAL REASONING LENGTH CONSTRAINT: You MUST keep your internal reasoning or thinking process (everything inside the <think>...</think> tags) extremely brief, short, and concise (maximum 3-4 sentences). Do not write a long essay. Proceed to generate the <SQL> tag as quickly as possible.
 
 Create a single SQL query for the question provided. 
 The query should have all the fields in SELECT clause (i.e. SELECT *)
@@ -64,8 +105,90 @@ For example:
 """
 
 
+import time
+
+FALLBACK_MODELS = ["llama-3.1-8b-instant", "llama-3.3-70b-versatile", "meta-llama/llama-4-scout-17b-16e-instruct"]
+
+def retry_on_rate_limit(max_retries=8, initial_delay=1):
+    """Auto-retry on rate limit / decommissioned errors.
+    
+    Strategy (per attempt):
+      1. Switch to the next model in FALLBACK_MODELS.
+      2. Every time we've cycled through ALL models, also rotate
+         to the next API key (if multiple keys exist in .env).
+    This ensures we exhaust all model+key combinations before giving up.
+    """
+    def decorator(func):
+        def wrapper(*args, **kwargs):
+            delay = initial_delay
+            models_tried_on_key = 0
+            for attempt in range(max_retries):
+                try:
+                    return func(*args, **kwargs)
+                except Exception as e:
+                    err_msg = str(e)
+                    err_lower = err_msg.lower()
+                    is_retriable = any(k in err_lower for k in [
+                        "429", "rate_limit", "ratelimiterror", "overloaded",
+                        "decommissioned", "not_found", "invalid_request_error",
+                        "tokens per day", "tokens per minute", "request_limit",
+                        "resource_exhausted", "service_unavailable",
+                    ])
+                    
+                    if is_retriable:
+                        # --- Rotate model ---
+                        current_model = os.environ.get('GROQ_MODEL', FALLBACK_MODELS[0])
+                        try:
+                            curr_idx = FALLBACK_MODELS.index(current_model)
+                            next_idx = (curr_idx + 1) % len(FALLBACK_MODELS)
+                        except ValueError:
+                            next_idx = 0
+                        next_model = FALLBACK_MODELS[next_idx]
+                        os.environ['GROQ_MODEL'] = next_model
+                        models_tried_on_key += 1
+                        
+                        # --- Rotate API key after cycling through all models ---
+                        if models_tried_on_key >= len(FALLBACK_MODELS) and len(API_KEYS) > 1:
+                            rotate_api_key()
+                            models_tried_on_key = 0
+                        
+                        print(f"[FAILOVER] attempt {attempt+1}/{max_retries}: "
+                              f"'{current_model}' failed -> switching to model='{next_model}', "
+                              f"key #{(_current_key_idx % len(API_KEYS)) + 1}/{len(API_KEYS)}")
+                        
+                        time.sleep(delay)
+                        delay = min(delay * 1.5, 15)  # cap backoff at 15s
+                    else:
+                        raise e
+            # Final attempt after exhausting retries
+            return func(*args, **kwargs)
+        return wrapper
+    return decorator
+
+
+def clean_think_block(text):
+    if not text:
+        return ""
+    if "<SQL>" in text:
+        parts = text.split("<SQL>", 1)
+        sql_part = "<SQL>" + parts[1]
+        prefix = parts[0]
+        if "</think>" in prefix:
+            prefix = prefix.split("</think>", 1)[1]
+        elif "<think>" in prefix:
+            prefix = prefix.split("<think>", 1)[0]
+        return (prefix.strip() + "\n" + sql_part.strip()).strip()
+    if "</think>" in text:
+        return text.split("</think>", 1)[1].strip()
+    elif "<think>" in text:
+        return text.split("<think>", 1)[0].strip()
+    return text.strip()
+
+
+@retry_on_rate_limit(max_retries=8, initial_delay=1)
 def generate_sql_query(question):
-    chat_completion = client_sql.chat.completions.create(
+    client = get_groq_client()
+    chat_completion = client.chat.completions.create(
         messages=[
             {
                 "role": "system",
@@ -78,11 +201,11 @@ def generate_sql_query(question):
         ],
         model=os.environ['GROQ_MODEL'],
         temperature=0.2,
-        max_tokens=1024
+        max_tokens=2048
     )
 
-    return chat_completion.choices[0].message.content
-
+    res = chat_completion.choices[0].message.content
+    return clean_think_block(res)
 
 
 def run_query(query):
@@ -92,8 +215,10 @@ def run_query(query):
             return df
 
 
+@retry_on_rate_limit(max_retries=8, initial_delay=1)
 def data_comprehension(question, context):
-    chat_completion = client_sql.chat.completions.create(
+    client = get_groq_client()
+    chat_completion = client.chat.completions.create(
         messages=[
             {
                 "role": "system",
@@ -109,16 +234,21 @@ def data_comprehension(question, context):
         max_tokens=2048
     )
 
-    return chat_completion.choices[0].message.content
+    res = chat_completion.choices[0].message.content
+    return clean_think_block(res)
 
 
-
+@retry_on_rate_limit(max_retries=5, initial_delay=2)
 def extract_category_or_search_term(question):
     prompt = f"""You are an expert at extracting the target product search term from a user question.
 We want to use this term to search Flipkart and scrape matching products.
 Analyze the user's question and extract the most relevant search query.
 
-CRITICAL RULE: If the user mentions a specific brand name, you MUST include the brand in your search term. This is essential because we need to scrape brand-specific products from Flipkart.
+CRITICAL RULES:
+1. BRAND NAMES (CRITICAL): If the user mentions a specific brand name, you MUST include the brand in your search term. This is essential because we need to scrape brand-specific products from Flipkart.
+   - Note that brand names can be common words (e.g. "Nothing", "Apple", "Boat", "Realme", "Google", "Noise", "Fire-Boltt"). You MUST treat them as brand names and preserve them in the search term. For example, "nothing 3 back cover" -> "nothing 3 back cover", "boat earbuds" -> "boat earbuds".
+2. MODEL NUMBERS / CODES: Preserve model numbers, versions, or specs (e.g. "s24", "15 pro", "2a", "3", "v15") in the search term.
+3. REMOVE CONSTRAINTS: Do not include price constraints (like "under 500", "below 10000"), ratings, or conversational preambles in the search term.
 
 Examples:
 - "Show me some watches" -> "watches"
@@ -132,10 +262,12 @@ Examples:
 - "Show me washing machines" -> "washing machine"
 - "Show me Thomson smart tv under 15000" -> "Thomson smart tv"
 - "Show me smart phone under 20000 of samsung brand" -> "Samsung phone"
+- "show me nothing 3 back cover under 500 rupee" -> "nothing 3 back cover"
+- "do you have nothing phone 2a" -> "nothing phone 2a"
 - "I want a Boat earbuds" -> "Boat earbuds"
 - "Do you have Realme phones?" -> "Realme phone"
 
-Return ONLY the plain text search term (maximum 3 words), nothing else. Do not wrap in quotes or add preamble. If the question is not about products or is chitchat, return "None".
+Return ONLY the plain text search term (maximum 4 words), nothing else. Do not wrap in quotes or add preamble. If the question is not about products or is chitchat, return "None".
 
 QUESTION: {question}"""
 
@@ -151,7 +283,8 @@ QUESTION: {question}"""
         max_tokens=50
     )
 
-    return chat_completion.choices[0].message.content.strip()
+    res = chat_completion.choices[0].message.content.strip()
+    return clean_think_block(res)
 
 
 def sql_chain(question):
@@ -181,7 +314,7 @@ def sql_chain(question):
             if search_term and search_term.lower() != "none":
                 print(f"No products found locally. Attempting to scrape Flipkart live for: '{search_term}'...")
                 try:
-                    num_scraped = scrape_and_populate_db(search_term, limit=10)
+                    num_scraped = scrape_and_populate_db(search_term, limit=8)
                     if num_scraped > 0:
                         # Retry query after scraping
                         response = run_query(sql_command)
@@ -219,7 +352,103 @@ def sql_chain(question):
         raise chain_err
 
 
-def scrape_and_populate_db(search_term, limit=10):
+def sql_chain_structured(question):
+    try:
+        sql_query = generate_sql_query(question)
+        pattern = "<SQL>(.*?)</SQL>"
+        matches = re.findall(pattern, sql_query, re.DOTALL)
+
+        sql_command = matches[0].strip() if (len(matches) > 0) else ""
+        if not sql_command or not sql_command.upper().startswith("SELECT"):
+            cleaned_response = sql_query.replace("<SQL>", "").replace("</SQL>", "").strip()
+            if cleaned_response:
+                return cleaned_response, []
+            return "I'm sorry, I couldn't understand your request. You can ask me about our products, store FAQs, shipping, or policies.", []
+
+        print(sql_command)
+
+        response = run_query(sql_command)
+        if response is None:
+            return "Sorry, there was a problem executing the product search.", []
+
+        total_results = len(response)
+
+        # Auto-scrape on demand if no products match the query locally
+        if total_results == 0:
+            search_term = extract_category_or_search_term(question)
+            if search_term and search_term.lower() != "none":
+                print(f"No products found locally. Attempting to scrape Flipkart live for: '{search_term}'...")
+                try:
+                    num_scraped = scrape_and_populate_db(search_term, limit=8)
+                    if num_scraped > 0:
+                        # Retry query after scraping
+                        response = run_query(sql_command)
+                        if response is not None:
+                            total_results = len(response)
+                except Exception as scrape_err:
+                    print(f"On-demand automatic scraping failed: {scrape_err}")
+                    err_msg = str(scrape_err)
+                    if "Internet connection" in err_msg or "ERR_INTERNET_DISCONNECTED" in err_msg:
+                        return "I tried to search Flipkart live for this product, but it seems your internet connection is disconnected. Please check your network connection and try again.", []
+                    elif "DNS name resolution" in err_msg or "ERR_NAME_NOT_RESOLVED" in err_msg:
+                        return "I tried to search Flipkart live, but name resolution failed. Please check your internet connection.", []
+                    elif "Connection timed out" in err_msg or "ERR_CONNECTION_TIMED_OUT" in err_msg:
+                        return "I tried to search Flipkart live, but the connection timed out. Flipkart may be currently offline or blocking automated requests.", []
+
+        if 'product_link' in response.columns:
+            response['product_link'] = response['product_link'].apply(lambda x: x.split('?')[0] if isinstance(x, str) else x)
+
+        if total_results > 10:
+            context = response.head(10).to_dict(orient='records')
+        else:
+            context = response.to_dict(orient='records')
+
+        answer = data_comprehension(question, context)
+        
+        if total_results > 10:
+            answer += f"\n\n*(Showing top 10 out of {total_results} matching products)*"
+        return answer, context
+    except Exception as chain_err:
+        err_msg = str(chain_err)
+        if "APIConnectionError" in err_msg or "Connection error" in err_msg or "Failed to establish a new connection" in err_msg or "request failed" in err_msg:
+            return "I cannot reach the AI model server. It seems your internet connection is disconnected. Please check your network connection and try again.", []
+        if "Internet connection" in err_msg or "ERR_INTERNET_DISCONNECTED" in err_msg:
+            return "I tried to search Flipkart live for this product, but it seems your internet connection is disconnected. Please check your network connection and try again.", []
+        return f"Error executing request: {err_msg}", []
+
+
+def clean_search_term(term: str) -> str:
+    """Cleans a search query and returns a standardized title-case category name candidate."""
+    if not term:
+        return "Others"
+    
+    # Lowercase and clean common search noise
+    t = term.lower().strip()
+    t = re.sub(r'\b(buy|online|cheap|best|latest|top|free shipping|flipkart|amazon|for men|for women|for kids|under|below|above|rs|\d+|rupee|rupees)\b', '', t)
+    t = re.sub(r'[^a-z0-9\s]', '', t)
+    t = re.sub(r'\s+', ' ', t).strip()
+    
+    if not t or len(t) < 3:
+        return "Others"
+        
+    # Split into words and title case
+    words = t.split()
+    title_words = [w.capitalize() for w in words]
+    
+    # Pluralize the last word if it's not already pluralized
+    if title_words:
+        last_word = title_words[-1]
+        if not (last_word.endswith('s') or last_word.endswith('y') or last_word.endswith('ch') or last_word.endswith('sh') or last_word.endswith('x') or last_word.endswith('z')):
+            title_words[-1] = last_word + 's'
+        elif last_word.endswith('y') and not any(last_word.endswith(x) for x in ['ay', 'ey', 'oy', 'uy']):
+            title_words[-1] = last_word[:-1] + 'ies'
+        elif last_word.endswith('ch') or last_word.endswith('sh') or last_word.endswith('x'):
+            title_words[-1] = last_word + 'es'
+            
+    return " ".join(title_words)
+
+
+def scrape_and_populate_db(search_term, limit=25):
     from selenium import webdriver
     from selenium.webdriver.common.by import By
     from selenium.webdriver.support.ui import WebDriverWait
@@ -231,22 +460,27 @@ def scrape_and_populate_db(search_term, limit=10):
     import time
 
     options = webdriver.ChromeOptions()
+    options.page_load_strategy = 'eager'
     options.add_experimental_option("excludeSwitches", ["enable-automation"])
     options.add_experimental_option('useAutomationExtension', False)
     options.add_argument("--headless")
     options.add_argument("--disable-gpu")
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
+    options.add_argument("--window-size=1920,1080")
+    options.add_argument("--disable-blink-features=AutomationControlled")
     options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
 
     driver = webdriver.Chrome(options=options)
+    driver.set_page_load_timeout(15)
     driver.execute_cdp_cmd("Page.addScriptToEvaluateOnNewDocument", {
         "source": "Object.defineProperty(navigator, 'webdriver', {get: () => undefined})"
     })
 
     try:
         # Step 1: Search Flipkart for the product category
-        website_link = f"https://www.flipkart.com/search?q={search_term.replace(' ', '+')}"
+        search_query_clean = search_term.replace('-', ' ')
+        website_link = f"https://www.flipkart.com/search?q={search_query_clean.replace(' ', '+')}"
         try:
             driver.get(website_link)
         except Exception as e:
@@ -426,10 +660,33 @@ def scrape_and_populate_db(search_term, limit=10):
                         except ValueError:
                             pass
 
+                # --- Image URL ---
+                image_url = ''
+                exclude_sizes = ['/70/70/', '/80/80/', '/160/210/', '/120/120/', '/120/150/', '/40/40/', '/48/48/', '/30/30/', '/24/24/', '/10/10/']
+                
+                # Check specific product detail selectors first
+                for selector in ['img._0DkuPH', 'img.DByoR4', 'img.jzoB4e', 'img.UHDDFP', 'img._53u2j-']:
+                    el = page_soup.select_one(selector)
+                    if el and el.get('src') and 'logo' not in el.get('src', '').lower():
+                        src = el.get('src')
+                        if not any(sz in src for sz in exclude_sizes):
+                            image_url = src
+                            break
+                
+                # Fallback to scanning all img tags, filtering out thumbnails/recommendations
+                if not image_url:
+                    for img in page_soup.find_all('img'):
+                        src = img.get('src', '')
+                        if ('rukminim2.flixcart.com/image/' in src or 'rukminim1.flixcart.com/image/' in src or '/xif0q/' in src) and 'logo' not in src.lower() and 'promo' not in src.lower():
+                            if not any(sz in src for sz in exclude_sizes):
+                                image_url = src
+                                break
+
+                description = page_text[:2000] if page_text else title
                 complete_product_details.append([
-                    product_page_link, title, brand, price, discount, avg_rating, total_ratings
+                    product_page_link, title, brand, price, discount, avg_rating, total_ratings, image_url, description
                 ])
-                print(f"  [OK] {brand} | {title[:60]}... | Rs.{price} | {discount*100:.0f}% off | Rating: {avg_rating}")
+                print(f"  [OK] {brand} | {title[:60]}... | Rs.{price} | {discount*100:.0f}% off | Rating: {avg_rating} | Image: {bool(image_url)}")
 
             except Exception as item_err:
                 err_msg = str(item_err)
@@ -437,49 +694,145 @@ def scrape_and_populate_db(search_term, limit=10):
                     raise RuntimeError("Internet connection was lost during scraping. Please check your network connection.") from item_err
                 print(f"Skipping product {product_page_link}: {item_err}")
 
-        # Insert into SQLite
+        # Insert/Update using modular components
         if complete_product_details:
-            df = pd.DataFrame(complete_product_details,
-                              columns=['product_link', 'title', 'brand', 'price', 'discount', 'avg_rating', 'total_ratings'])
-            # Clean values
-            for col in ['brand', 'title']:
-                df[col] = df[col].astype(str).str.strip()
-
-            # Drop rows with empty titles
-            df = df[df['title'].str.len() > 0]
-
-            conn = sqlite3.connect(db_path)
-            cursor = conn.cursor()
-
-            # Ensure table exists
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS product (
-                    product_link TEXT UNIQUE,
-                    title TEXT,
-                    brand TEXT,
-                    price INTEGER,
-                    discount REAL,
-                    avg_rating REAL,
-                    total_ratings INTEGER
-                )
-            """)
-            conn.commit()
-
-            # Clear only the duplicate records we are about to scrape/refresh to avoid duplicates
-            placeholders = ','.join(['?'] * len(df))
-            cursor.execute(f"DELETE FROM product WHERE product_link IN ({placeholders})", list(df['product_link']))
-            conn.commit()
-
-            df.to_sql('product', conn, if_exists='append', index=False)
-            conn.close()
-            print(f"Successfully scraped and inserted {len(df)} products for '{search_term}'!")
-            return len(df)
+            from database_service import get_connection
+            from category_classifier import CategoryClassifier
+            from category_normalizer import CategoryNormalizer
+            from category_manager import CategoryManager
+            from duplicate_detector import DuplicateDetector
+            from product_repository import ProductRepository
+            
+            classifier = CategoryClassifier()
+            category_manager = CategoryManager(get_connection)
+            product_repository = ProductRepository(get_connection)
+            
+            success_count = 0
+            for item in complete_product_details:
+                link, title, brand, price, discount, avg_rating, total_ratings, image_url, description = item
+                
+                # Extract clean brand/title
+                brand = str(brand).strip()
+                title = str(title).strip()
+                if not title:
+                    continue
+                    
+                product_id = DuplicateDetector.extract_product_id(link, title)
+                product_data = {
+                    "product_id": product_id,
+                    "product_link": link,
+                    "title": title,
+                    "brand": brand,
+                    "price": price,
+                    "discount": discount,
+                    "avg_rating": avg_rating,
+                    "rating": avg_rating,
+                    "total_ratings": total_ratings,
+                    "availability": "In Stock",
+                    "image": image_url,
+                    "image_url": image_url,
+                    "description": description
+                }
+                
+                # Dynamic Category detection and creation
+                category_name, confidence, source, reason = classifier.classify(product_data)
+                normalized_cat = CategoryNormalizer.normalize(category_name)
+                
+                # If classified as "Others", fallback to clean search term candidate
+                if normalized_cat == "Others":
+                    candidate = clean_search_term(search_term)
+                    if candidate != "Others":
+                        normalized_cat = CategoryNormalizer.normalize(candidate)
+                        source = "Search_Term_Fallback"
+                        reason = f"Classification is 'Others' (low confidence). Using cleaned search query '{search_term}' to assign to dynamic category '{normalized_cat}'."
+                        confidence = 0.50 # Moderate confidence for search term fallback
+                
+                # Fetch or create
+                category_id, slug = category_manager.get_or_create_category(normalized_cat)
+                
+                product_data["category_id"] = category_id
+                product_data["category_name"] = normalized_cat
+                product_data["confidence_score"] = confidence
+                product_data["classification_source"] = source
+                
+                # Save product in DB (handles insert/update correctly)
+                product_repository.save_product(product_data)
+                success_count += 1
+                
+                # Detailed category scoring log (Requirement 11)
+                print(f"\n[SCRAPER-PIPELINE] Product: {title[:50]}...")
+                print(f"  Detected Category: {normalized_cat} (Confidence: {confidence*100:.1f}%)")
+                print(f"  Reason: {reason}")
+                
+            # Recalculate category counts
+            category_manager.recalculate_all_counts()
+            print(f"Successfully scraped, classified, and processed {success_count} products for '{search_term}'!")
+            return success_count
         return 0
     finally:
         driver.quit()
+
+
+def extract_specs_from_title(title):
+    import re
+    title_lower = title.lower()
+    
+    # Try to extract parenthetical info first
+    parenthetical = re.search(r'\(([^)]+)\)', title)
+    if parenthetical:
+        p_text = parenthetical.group(1)
+        if any(k in p_text.lower() for k in ['ram', 'ssd', 'storage', 'gb', 'tb', 'core', 'ryzen', 'capacity', 'litre', 'inch']):
+            return p_text.strip()
+            
+    specs = []
+    
+    # Laptop patterns
+    if any(k in title_lower for k in ['laptop', 'notebook', 'macbook', 'expertbook', 'book']):
+        # Graphics
+        gpu = re.search(r'(rtx\s*\d+|gtx\s*\d+|iris|intel hd|radeon)', title_lower, re.IGNORECASE)
+        if gpu: specs.append(gpu.group(1).upper())
+        # RAM
+        ram = re.search(r'(\d+\s*gb\s*(?:ram|lpddr\d|ddr\d))', title_lower, re.IGNORECASE)
+        if ram: specs.append(ram.group(1).upper())
+        # SSD/HDD
+        storage = re.search(r'(\d+\s*(?:gb|tb)\s*(?:ssd|hdd))', title_lower, re.IGNORECASE)
+        if storage: specs.append(storage.group(1).upper())
+        # Screen Size
+        screen = re.search(r'(\d+(?:\.\d+)?\s*(?:inch|in|\"))', title_lower, re.IGNORECASE)
+        if screen: specs.append(screen.group(1).replace('in', '-inch'))
+        
+    # Phone patterns
+    elif any(k in title_lower for k in ['phone', 'smartphone', 'mobile', 'galaxy', 'iphone']):
+        # RAM/Storage
+        storage = re.search(r'(\d+\s*(?:gb|tb)\s*(?:storage|rom))', title_lower, re.IGNORECASE)
+        if storage: specs.append(storage.group(1).upper())
+        ram = re.search(r'(\d+\s*gb\s*(?:ram))', title_lower, re.IGNORECASE)
+        if ram: specs.append(ram.group(1).upper())
+        # 5G
+        five_g = re.search(r'\b(5g|4g)\b', title_lower, re.IGNORECASE)
+        if five_g: specs.append(five_g.group(1).upper())
+        
+    # Air Cooler/Appliance patterns
+    elif any(k in title_lower for k in ['cooler', 'ac', 'refrigerator', 'fridge', 'washing']):
+        # Capacity
+        capacity = re.search(r'(\d+\s*(?:l|litre|litres|kg))', title_lower, re.IGNORECASE)
+        if capacity: specs.append(capacity.group(1).title())
+        # Speed/Inverter
+        if 'inverter' in title_lower: specs.append("Inverter Compatible")
+        if 'honeycomb' in title_lower: specs.append("Honeycomb Pads")
+        
+    if specs:
+        return ' • '.join(specs)
+        
+    fallback = re.findall(r'(\d+\s*(?:gb|tb|l|kg|inch))', title_lower, re.IGNORECASE)
+    if fallback:
+        return ' • '.join([f.upper() for f in fallback[:3]])
+        
+    return "Standard Edition"
 
 
 if __name__ == "__main__":
     question = "Show top 3 shoes in descending order of rating"
     answer = sql_chain(question)
     print(answer)
+

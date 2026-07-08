@@ -1,0 +1,162 @@
+{
+  "Laptops": {
+    "slug": "laptop",
+    "super_category": "Electronics",
+    "keywords": ["laptop", "notebook", "ultrabook", "macbook", "chromebook", "expertbook", "thinkpad", "ideapad", "zenbook", "vivobook", "inspiron", "vostro", "pavilion", "latitude", "predator", "legion", "rog strix"],
+    "negative_keywords": ["bag", "sleeve", "case", "cover", "stand", "charger", "adapter", "mouse", "keyboard", "skin", "decals", "soundbar", "speaker", "cleaning kit", "screen guard", "table"],
+    "image": "https://images.unsplash.com/photo-1588872657578-7efd1f1555ed?w=200&q=80",
+    "icon": "💻"
+  },
+  "Smartphones": {
+    "slug": "phone",
+    "super_category": "Electronics",
+    "keywords": ["phone", "smartphone", "mobile", "galaxy", "iphone", "motorola", "infinix", "realme", "vivo", "poco", "oppo", "oneplus", "hmd vibe", "redmi", "pixel", "micromax", "nokia", "5g phone", "4g phone"],
+    "negative_keywords": ["laptop", "notebook", "tv", "television", "monitor", "watch", "smartwatch", "band", "spinner", "fidget", "case", "cover", "charger", "adapter", "stand", "holder", "selfie stick", "tripod", "screen guard", "tempered glass", "pouch"],
+    "image": "https://images.unsplash.com/photo-1511707171634-5f897ff02aa9?w=200&q=80",
+    "icon": "📱"
+  },
+  "Air Conditioners": {
+    "slug": "conditioner",
+    "super_category": "Home Appliances",
+    "keywords": ["air conditioner", "split ac", "window ac", "inverter ac", "ton ac", "air-conditioner"],
+    "negative_keywords": ["cooler", "coolers", "fan", "fans", "remote controller", "stand", "bracket", "cover", "stabilizer"],
+    "image": "https://images.unsplash.com/photo-1563161402-8bbf110d0d87?w=200&q=80",
+    "icon": "❄️"
+  },
+  "Air Coolers": {
+    "slug": "cooler",
+    "super_category": "Home Appliances",
+    "keywords": ["cooler", "coolers", "air cooler", "desert cooler", "personal cooler", "tower cooler", "window cooler"],
+    "negative_keywords": ["ceiling fan", "exhaust fan", "pedestal fan", "wall fan", "ac", "air conditioner", "air-conditioner", "perfume", "fragrance", "cleaner"],
+    "image": "https://images.unsplash.com/photo-1621905251189-08b45d6a269e?w=200&q=80",
+    "icon": "🌬️"
+  },
+  "Washing Machines": {
+    "slug": "washing",
+    "super_category": "Home Appliances",
+    "keywords": ["washing machine", "washer", "dryer", "front load", "top load", "semi automatic", "fully automatic", "tumble dryer"],
+    "negative_keywords": ["cover", "stand", "liquid", "powder", "detergent", "descaler", "inlet hose", "outlet pipe", "tap adapter", "laundry bag"],
+    "image": "https://images.unsplash.com/photo-1626806787461-102c1bfaaea1?w=200&q=80",
+    "icon": "🧺"
+  },
+  "Refrigerators": {
+    "slug": "refrigerator",
+    "super_category": "Home Appliances",
+    "keywords": ["fridge", "refrigerator", "single door fridge", "double door fridge", "side by side refrigerator", "triple door"],
+    "negative_keywords": ["stand", "cover", "stabilizer", "magnet", "bottle rack", "egg tray", "mat", "deodorizer"],
+    "image": "https://images.unsplash.com/photo-1584622650111-993a426fbf0a?w=200&q=80",
+    "icon": "🫙"
+  },
+  "Televisions": {
+    "slug": "tv",
+    "super_category": "Electronics",
+    "keywords": ["tv", "television", "led smart", "qled", "oled", "smart tv", "android tv", "google tv", "flat screen tv", "monitor"],
+    "negative_keywords": ["watch", "smartwatch", "band", "manga", "book", "wall mount", "stand", "remote", "stabilizer", "cleaner", "case", "sleeve", "backpack", "laptop"],
+    "image": "https://images.unsplash.com/photo-1593305841991-05c297ba4575?w=200&q=80",
+    "icon": "📺"
+  },
+  "Headphones": {
+    "slug": "headphone",
+    "super_category": "Electronics",
+    "keywords": ["speaker", "soundbar", "headphone", "earphone", "headset", "audio", "sound", "buds", "earbuds", "neckband", "bluetooth speaker", "enc", "anc", "duopods", "tws"],
+    "negative_keywords": ["phone", "laptop", "watch", "mouse", "bat", "racket", "cooktop", "induction", "case", "cover", "ear tips", "pouch", "stand"],
+    "image": "https://images.unsplash.com/photo-1545454675-3531b543be5d?w=200&q=80",
+    "icon": "🎧"
+  },
+  "Computer Mice": {
+    "slug": "mouse",
+    "super_category": "Electronics",
+    "keywords": ["mouse", "mice", "gaming mouse", "wireless mouse", "optical mouse", "trackball"],
+    "negative_keywords": ["pad", "mat", "case", "keyboard", "trap", "repeller", "glue board", "repellent"],
+    "image": "https://images.unsplash.com/photo-1615663245857-ac93bb7c39e7?w=200&q=80",
+    "icon": "🖱️"
+  },
+  "Induction Cooktops": {
+    "slug": "induction",
+    "super_category": "Home Appliances",
+    "keywords": ["induction", "cooktop", "cooker", "stove", "infrared cooktop", "induction plate"],
+    "negative_keywords": ["rice cooker", "pressure cooker", "pan", "pot", "cookware", "kettle", "cleaning agent"],
+    "image": "https://images.unsplash.com/photo-1574269909862-7e1d70bb8078?w=200&q=80",
+    "icon": "🍳"
+  },
+  "Mixers & Grinders": {
+    "slug": "mixer",
+    "super_category": "Home Appliances",
+    "keywords": ["mixer", "blender", "grinder", "juicer", "wet grinder", "food processor", "hand blender", "chopper"],
+    "negative_keywords": ["jar", "blade", "lid", "gasket", "coupler", "coffee maker", "kettle"],
+    "image": "https://images.unsplash.com/photo-1578643463396-0997cb5328c1?w=200&q=80",
+    "icon": "🌪️"
+  },
+  "Mosquito Bats": {
+    "slug": "mosquito",
+    "super_category": "Home Appliances",
+    "keywords": ["mosquito", "insect", "racket", "swatter", "mosquito bat", "pest repeller"],
+    "negative_keywords": ["tennis racket", "badminton racket", "liquid vaporiser", "coil", "net", "patch", "gel"],
+    "image": "https://images.unsplash.com/photo-1615678815958-5910c6811a25?w=200&q=80",
+    "icon": "⚡"
+  },
+  "Trimmers & Grooming": {
+    "slug": "trimmer",
+    "super_category": "Personal Care",
+    "keywords": ["trimmer", "groomer", "grooming", "shaver", "epilator", "hair straightener", "hair dryer", "clipper"],
+    "negative_keywords": ["shaving cream", "razor blade", "oil", "gel", "comb", "brush", "attachment"],
+    "image": "https://images.unsplash.com/photo-1621607512214-68297480165e?w=200&q=80",
+    "icon": "🪒"
+  },
+  "Sunglasses": {
+    "slug": "sunglass",
+    "super_category": "Fashion",
+    "keywords": ["sunglasses", "sunglass", "spectacles", "spectacle", "goggles", "eyewear", "frame"],
+    "negative_keywords": ["case", "pouch", "cleaning cloth", "spray", "chain", "strap"],
+    "image": "https://images.unsplash.com/photo-1511499767150-a48a237f0083?w=200&q=80",
+    "icon": "🕶️"
+  },
+  "Books & Manga": {
+    "slug": "book",
+    "super_category": "Books",
+    "keywords": ["book", "books", "manga", "novel", "novels", "comics", "comic", "ncert", "paperback", "hardcover", "read", "textbook"],
+    "negative_keywords": ["shelf", "ends", "stand", "mark", "bag", "cover", "lamp", "tv", "laptop", "phone"],
+    "image": "https://images.unsplash.com/photo-1544947950-fa07a98d237f?w=200&q=80",
+    "icon": "📚"
+  },
+  "Fidget Toys": {
+    "slug": "fidget",
+    "super_category": "Toys",
+    "keywords": ["fidget", "popper", "stress relief", "pop it", "sensory toy", "spinner", "cube for stress", "infinity cube", "fidget spinner"],
+    "negative_keywords": ["phone", "laptop", "watch", "mouse", "bat", "induction", "book", "manga"],
+    "image": "https://images.unsplash.com/photo-1596461404969-9ae70f2830c1?w=200&q=80",
+    "icon": "🌀"
+  },
+  "Cameras": {
+    "slug": "camera",
+    "super_category": "Electronics",
+    "keywords": ["camera", "dslr", "lens", "action camera", "mirrorless camera", "digicam", "dashcam", "security camera"],
+    "negative_keywords": ["bag", "case", "tripod", "cleaning kit", "strap", "sd card", "battery charger", "stand", "book", "manga"],
+    "image": "https://images.unsplash.com/photo-1516035069371-29a1b244cc32?w=200&q=80",
+    "icon": "📷"
+  },
+  "Fans": {
+    "slug": "fan",
+    "super_category": "Home Appliances",
+    "keywords": ["fan", "ceiling fan", "exhaust fan", "pedestal fan", "wall fan", "table fan"],
+    "negative_keywords": ["cooler", "coolers", "ac", "air conditioner", "air-conditioner", "heater", "case", "cover", "regulator", "capacitor"],
+    "image": "https://images.unsplash.com/photo-1527515637462-cff94eecc1ac?w=200&q=80",
+    "icon": "🪭"
+  },
+  "Footwear": {
+    "slug": "shoe",
+    "super_category": "Fashion",
+    "keywords": ["shoes", "shoe", "sneaker", "loafers", "loafer", "jutti", "jutis", "sandal", "sandals", "slipper", "slippers", "clog", "clogs", "flip flop", "flip flops", "boot", "boots", "party wear", "running shoes", "sports shoes"],
+    "negative_keywords": ["socks", "polish", "horn", "lace", "rack", "cabinet", "bag", "cleaner", "sole", "insoles", "electronics", "laptop"],
+    "image": "https://images.unsplash.com/photo-1542291026-7eec264c27ff?w=200&q=80",
+    "icon": "👟"
+  },
+  "Smartwatches": {
+    "slug": "watch",
+    "super_category": "Electronics",
+    "keywords": ["watch", "smartwatch", "band", "fitness tracker", "fitness band"],
+    "negative_keywords": ["analog watch", "wall clock", "charger", "strap", "case", "screen protector", "stand"],
+    "image": "https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=200&q=80",
+    "icon": "⌚"
+  }
+}

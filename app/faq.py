@@ -2,12 +2,14 @@ import os
 
 import chromadb
 from chromadb.utils import embedding_functions
-from groq import Groq
 import pandas
 from dotenv import load_dotenv
 from pathlib import Path
 
 load_dotenv(Path(__file__).parent / ".env")
+
+# Import shared multi-key pool and failover from sql.py
+from app.sql import get_groq_client, retry_on_rate_limit, API_KEYS, rotate_api_key, FALLBACK_MODELS
 
 
 ef = embedding_functions.SentenceTransformerEmbeddingFunction(
@@ -15,7 +17,6 @@ ef = embedding_functions.SentenceTransformerEmbeddingFunction(
         )
 
 chroma_client = chromadb.Client()
-groq_client = Groq()
 collection_name_faq = 'faqs'
 
 
@@ -52,6 +53,17 @@ def get_relevant_qa(query):
     return result
 
 
+def clean_think_block(text):
+    if not text:
+        return ""
+    if "</think>" in text:
+        return text.split("</think>", 1)[1].strip()
+    elif "<think>" in text:
+        return text.split("<think>", 1)[0].strip()
+    return text.strip()
+
+
+@retry_on_rate_limit(max_retries=8, initial_delay=1)
 def generate_answer(query, context):
     prompt = f'''Given the following context and question, generate answer based on this context only.
     If the answer is not found in the context, kindly state "I don't know". Don't try to make up an answer.
@@ -60,7 +72,8 @@ def generate_answer(query, context):
     
     QUESTION: {query}
     '''
-    completion = groq_client.chat.completions.create(
+    client = get_groq_client()
+    completion = client.chat.completions.create(
         model=os.environ['GROQ_MODEL'],
         messages=[
             {
@@ -70,7 +83,8 @@ def generate_answer(query, context):
         ],
         max_tokens=1024
     )
-    return completion.choices[0].message.content
+    res = completion.choices[0].message.content
+    return clean_think_block(res)
 
 
 def faq_chain(query):

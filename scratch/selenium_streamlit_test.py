@@ -1,4 +1,4 @@
-"""Selenium test: send a query to the Streamlit chatbot and capture the response."""
+"""Selenium E2E Verification for ShopAI Dashboard"""
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
@@ -15,56 +15,45 @@ options.add_argument("--window-size=1920,1080")
 driver = webdriver.Chrome(options=options)
 
 try:
-    print("[1] Loading Streamlit app (waiting 20s)...")
+    print("[1] Loading ShopAI App on localhost:8501...")
     driver.get("http://localhost:8501")
-    time.sleep(20)  # Give Streamlit plenty of time to start
+    time.sleep(15)  # Wait for boot & render
+    
+    # Save screenshot of initial home state (greeting, suggestion cards)
+    screenshot_1 = os.path.join(SCREENSHOT_DIR, "shopai_home.png")
+    driver.save_screenshot(screenshot_1)
+    print(f"  Home screen screenshot saved: {screenshot_1}")
 
-    # Take initial screenshot to see state
-    driver.save_screenshot(os.path.join(SCREENSHOT_DIR, "initial_state.png"))
-    print(f"  Page title: {driver.title}")
+    # Verify if suggestion buttons/cards exist
+    buttons = driver.find_elements(By.CSS_SELECTOR, "button")
+    button_texts = [b.text for b in buttons if b.text]
+    print(f"  Found buttons count: {len(button_texts)}")
 
-    # Try to find chat input with longer timeout
-    print("[2] Looking for chat input (timeout 30s)...")
-    chat_input = WebDriverWait(driver, 30).until(
-        EC.presence_of_element_located((By.CSS_SELECTOR, "textarea"))
+    # Type a query to search for products
+    print("[2] Typing search query...")
+    chat_input = WebDriverWait(driver, 60).until(
+        EC.presence_of_element_located((By.CSS_SELECTOR, "input[type='text']"))
     )
-    print("  Found chat input!")
-
-    # Type query
-    print("[3] Typing query...")
     chat_input.click()
     time.sleep(0.5)
-    chat_input.send_keys("show me smart phone under 20000 rupee of samsung brand")
+    chat_input.send_keys("trimmer")
     time.sleep(0.5)
     chat_input.send_keys(Keys.RETURN)
 
-    # Wait for response by polling
-    print("[4] Waiting for response (polling up to 120s)...")
-    for i in range(24):  # 24 * 5 = 120 seconds
-        time.sleep(5)
-        messages = driver.find_elements(By.CSS_SELECTOR, "[data-testid='stChatMessage']")
-        if len(messages) >= 2:
-            last_text = messages[-1].text.strip()
-            if last_text and len(last_text) > 10:
-                print(f"  Response detected after {(i+1)*5}s")
-                break
-        print(f"  ...waiting ({(i+1)*5}s, {len(messages)} messages)")
+    print("[3] Waiting for response and product carousel (up to 40s)...")
+    time.sleep(25)  # Wait for SQL query and UI render
 
-    time.sleep(2)
+    # Save screenshot of search results
+    screenshot_2 = os.path.join(SCREENSHOT_DIR, "shopai_search_results.png")
+    driver.save_screenshot(screenshot_2)
+    print(f"  Search result screenshot saved: {screenshot_2}")
 
-    # Screenshot
-    screenshot_path = os.path.join(SCREENSHOT_DIR, "samsung_phone_result.png")
-    driver.save_screenshot(screenshot_path)
-    print(f"[5] Screenshot saved: {screenshot_path}")
-
-    # Extract all messages
-    messages = driver.find_elements(By.CSS_SELECTOR, "[data-testid='stChatMessage']")
-    print(f"\n[INFO] Total messages: {len(messages)}")
-    for idx, msg in enumerate(messages):
-        text = msg.text.strip()
-        print(f"\n--- Message {idx+1} ---")
-        print(text[:800] if text else "(empty)")
+    # Check if custom product cards are present
+    product_cards = driver.find_elements(By.CLASS_NAME, "product-card")
+    print(f"  Found {len(product_cards)} styled product cards in UI!")
+    for idx, card in enumerate(product_cards[:3]):
+        print(f"    Card {idx+1} text content: {card.text.encode('ascii', 'ignore').decode('ascii').replace(chr(10), ' | ')}")
 
 finally:
     driver.quit()
-    print("\n[DONE]")
+    print("\n[DONE] E2E test finished.")
