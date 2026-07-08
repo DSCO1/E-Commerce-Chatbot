@@ -14,7 +14,3 @@ python-dotenv==1.1.1
 
 beautifulsoup4==4.13.4
 lxml==6.0.0
-
-# torch CPU-only (much smaller for cloud deployment)
---extra-index-url https://download.pytorch.org/whl/cpu
-torch==2.4.1+cpu
