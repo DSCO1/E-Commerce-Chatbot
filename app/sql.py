@@ -480,11 +480,14 @@ def scrape_and_populate_db(search_term, limit=25):
     import re
     import time
 
+    from selenium.webdriver.chrome.service import Service
+    import shutil
+
     options = webdriver.ChromeOptions()
     options.page_load_strategy = 'eager'
     options.add_experimental_option("excludeSwitches", ["enable-automation"])
     options.add_experimental_option('useAutomationExtension', False)
-    options.add_argument("--headless")
+    options.add_argument("--headless=new")
     options.add_argument("--disable-gpu")
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
@@ -492,13 +495,17 @@ def scrape_and_populate_db(search_term, limit=25):
     options.add_argument("--disable-blink-features=AutomationControlled")
     options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
 
-    # Auto-detect Streamlit Cloud's Chromium binary (Linux)
-    import shutil
+    # Auto-detect Streamlit Cloud's Chromium and ChromeDriver binary (Linux)
     chromium_path = shutil.which("chromium") or shutil.which("chromium-browser")
     if chromium_path:
         options.binary_location = chromium_path
 
-    driver = webdriver.Chrome(options=options)
+    chrome_driver_path = shutil.which("chromedriver")
+    if chrome_driver_path:
+        service = Service(executable_path=chrome_driver_path)
+        driver = webdriver.Chrome(service=service, options=options)
+    else:
+        driver = webdriver.Chrome(options=options)
     driver.set_page_load_timeout(15)
     driver.execute_cdp_cmd("Page.addScriptToEvaluateOnNewDocument", {
         "source": "Object.defineProperty(navigator, 'webdriver', {get: () => undefined})"
