@@ -417,6 +417,11 @@ def sql_chain_structured(question):
                         return "I tried to search Flipkart live, but the connection timed out. Flipkart may be currently offline or blocking automated requests.", []
                     elif "blocking automated requests" in err_msg or "403" in err_msg or "Forbidden" in err_msg:
                         return f"I couldn't find **{search_term}** in our database, and Flipkart is currently blocking automated scraping from this server.\n\n👉 **Use the manual Flipkart Scraper in the left sidebar** — enter **'{search_term}'** as the search term and click **Start Scraping** to load live products into the database. Then ask me again!", []
+                    else:
+                        import traceback
+                        tb_str = traceback.format_exc()
+                        return f"An error occurred while automatically searching Flipkart live for **{search_term}**:\n\n```\n{err_msg}\n```\n\nTraceback:\n```\n{tb_str}\n```", []
+
 
 
         if 'product_link' in response.columns:
