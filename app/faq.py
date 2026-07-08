@@ -9,7 +9,7 @@ from pathlib import Path
 load_dotenv(Path(__file__).parent / ".env")
 
 # Import shared multi-key pool and failover from sql.py
-from app.sql import get_groq_client, retry_on_rate_limit, API_KEYS, rotate_api_key, FALLBACK_MODELS
+from sql import get_groq_client, retry_on_rate_limit, API_KEYS, rotate_api_key, FALLBACK_MODELS
 
 
 ef = embedding_functions.SentenceTransformerEmbeddingFunction(
