@@ -558,7 +558,15 @@ def scrape_and_populate_db(search_term, limit=25):
                         break
             if not title or len(title) < 5:
                 continue
+            # Strip Flipkart UI noise prefixes from title
+            for noise in ['Add to Compare', 'Add to Wishlist', 'Compare', 'Wishlist']:
+                if title.startswith(noise):
+                    title = title[len(noise):].strip()
+            title = re.sub(r'^\s*\d+\s*', '', title)  # strip leading numbers
             title = re.sub(r'\s*\(\d+\s*Colors?\)', '', title, flags=re.IGNORECASE)
+            title = title.strip()
+            if not title or len(title) < 5:
+                continue
 
             # --- Brand ---
             brand = ''
