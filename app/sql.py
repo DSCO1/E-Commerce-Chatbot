@@ -104,6 +104,8 @@ CRITICAL QUERY ACCURACY RULES:
     - "boat earbuds under 1000" -> `SELECT * FROM product WHERE (title LIKE '%earbud%' OR title LIKE '%buds%' OR title LIKE '%earphone%' OR title LIKE '%headphone%' OR title LIKE '% ear %' OR title LIKE 'ear %' OR title LIKE '% ear') AND title LIKE '%boat%' AND price < 1000`
     - "spigen case for samsung s25" -> `SELECT * FROM product WHERE title LIKE '%case%' AND title LIKE '%samsung%' AND title LIKE '%s25%' AND brand LIKE '%spigen%'`
 11. COMMON-WORD BRAND NAMES (CRITICAL): Many popular e-commerce brands have names that are common English words. You MUST recognize and preserve these as brand names when they appear in product queries, and filter for them using `title LIKE '%brand%'`. Common-word brands include: "Nothing" (phone brand), "Boat" (audio brand), "Noise" (smartwatch brand), "Realme", "OnePlus", "Apple", "Google", "Fire-Boltt", "Zebronics", "Portronics", "Ambrane", "Redmi", "POCO". Never ignore or drop brand names from the query. For example, "nothing 3 back cover" must include `title LIKE '%nothing%'` in the WHERE clause. Remember: for accessories, the device brand belongs in the title search, not the brand column (see Rule 10e).
+12. FILTER BY TITLE ONLY (CRITICAL): Do NOT attempt to filter by the 'category_name' or 'category_id' columns in the WHERE clause. Always filter for product type/categories using the `title` column with `LIKE` operators (e.g. `title LIKE '%microwave%' AND title LIKE '%oven%'`), as category names are dynamically assigned, pluralized, and may vary.
+
 
 CRITICAL REASONING LENGTH CONSTRAINT: You MUST keep your internal reasoning or thinking process (everything inside the <think>...</think> tags) extremely brief, short, and concise (maximum 3-4 sentences). Do not write a long essay. Proceed to generate the <SQL> tag as quickly as possible.
 
@@ -592,16 +594,28 @@ def scrape_and_populate_db(search_term, limit=25):
 
             # --- Title ---
             title = ''
-            for sel in ['div.KzDlHZ', 'a.IRpwTa', 'div.wjcEIp', 'p.txdYFf', 'div._4rR01T', 'a.s1Q9rs', 'div.col-12-12']:
-                el = card.select_one(sel)
-                if el and el.get_text(strip=True):
-                    title = el.get_text(strip=True)
-                    break
+            # 1. Try image alt first (highly robust for clean titles)
+            img_tag = card.select_one('img')
+            if img_tag:
+                alt = img_tag.get('alt', '').strip()
+                if alt and len(alt) > 15 and 'logo' not in alt.lower():
+                    title = alt
+            # 2. Try known selector list
+            if not title:
+                for sel in ['div.RG5Slk', 'div.KzDlHZ', 'a.IRpwTa', 'div.wjcEIp', 'p.txdYFf', 'div._4rR01T', 'a.s1Q9rs']:
+                    el = card.select_one(sel)
+                    if el and el.get_text(strip=True):
+                        title = el.get_text(strip=True)
+                        break
+            # 3. Fallback to searching text inside the card links
             if not title:
                 for a in card.find_all('a'):
-                    t = a.get_text(strip=True)
-                    if len(t) > 15:
-                        title = t
+                    for el in a.find_all(string=True):
+                        t = el.strip()
+                        if len(t) > 15 and not any(w in t.lower() for w in ['compare', 'wishlist', 'rating', 'review', 'off', 'exchange']):
+                            title = t
+                            break
+                    if title:
                         break
             if not title or len(title) < 5:
                 continue
