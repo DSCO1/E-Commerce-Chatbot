@@ -7,6 +7,10 @@ from pathlib import Path
 from dotenv import load_dotenv
 from pandas import DataFrame
 
+# Set custom writable path for playwright browsers inside workspace
+# to guarantee it works on read-only/serverless containers like Streamlit Sharing, Render, etc.
+os.environ["PLAYWRIGHT_BROWSERS_PATH"] = str(Path(__file__).parent / "playwright-browsers")
+
 load_dotenv(Path(__file__).parent / ".env")
 
 FALLBACK_MODELS = ["llama-3.1-8b-instant", "llama-3.3-70b-versatile", "meta-llama/llama-4-scout-17b-16e-instruct"]
