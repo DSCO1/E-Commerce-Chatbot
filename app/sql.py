@@ -661,9 +661,6 @@ def scrape_and_populate_db(search_term, limit=25):
                 '--disable-setuid-sandbox',
                 '--disable-dev-shm-usage',
                 '--disable-gpu',
-                '--single-process',
-                '--no-zygote',
-                '--disable-extensions',
             ]
         )
         context = browser.new_context(
