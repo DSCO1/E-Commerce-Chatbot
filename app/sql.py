@@ -662,25 +662,80 @@ def scrape_and_populate_db(search_term, limit=25):
         browser = p.chromium.launch(
             headless=True,
             args=[
+                # --- Sandbox / GPU (required for containerised environments) ---
                 '--no-sandbox',
                 '--disable-setuid-sandbox',
-                '--disable-dev-shm-usage',
+                '--disable-dev-shm-usage',   # Use /tmp instead of /dev/shm (prevents shared-memory OOM)
                 '--disable-gpu',
+                '--no-zygote',               # Disables the zygote process — saves ~20 MB fork overhead
+
+                # --- Single-process mode: biggest RAM saver (~100-150 MB) ---
+                # Merges browser + renderer into one process instead of forking a child
+                '--single-process',
+
+                # --- V8 JavaScript engine heap cap ---
+                '--js-flags=--max-old-space-size=128',  # Limit V8 heap to 128 MB
+
+                # --- Disable all non-essential browser services ---
+                '--disable-extensions',
+                '--disable-background-networking',
+                '--disable-background-timer-throttling',
+                '--disable-backgrounding-occluded-windows',
+                '--disable-breakpad',
+                '--disable-client-side-phishing-detection',
+                '--disable-component-update',
+                '--disable-default-apps',
+                '--disable-domain-reliability',
+                '--disable-hang-monitor',
+                '--disable-ipc-flooding-protection',
+                '--disable-popup-blocking',
+                '--disable-print-preview',
+                '--disable-prompt-on-repost',
+                '--disable-renderer-backgrounding',
+                '--disable-speech-api',
+                '--disable-sync',
+                '--disable-translate',
+                '--hide-scrollbars',
+                '--metrics-recording-only',
+                '--mute-audio',
+                '--no-first-run',
+                '--password-store=basic',
+                '--safebrowsing-disable-auto-update',
+                '--use-mock-keychain',
+
+                # --- Disable high-memory Chrome feature flags ---
+                '--disable-features=IsolateOrigins,site-per-process,TranslateUI,BlinkGenPropertyTrees',
+
+                # --- Disable image rendering at the browser level (belt-and-suspenders) ---
+                '--blink-settings=imagesEnabled=false',
             ]
         )
         context = browser.new_context(
             user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-            viewport={"width": 1366, "height": 768},
+            viewport={"width": 800, "height": 600},   # Smaller viewport → less render memory
             locale="en-IN",
             extra_http_headers={
                 "Accept-Language": "en-IN,en-GB;q=0.9,en-US;q=0.8,en;q=0.7",
-            }
+            },
+            java_script_enabled=True,   # Keep JS on — Flipkart needs it for routing/auth cookies
         )
         page = context.new_page()
 
-        # Block images/fonts to speed up page load (keeping stylesheets to avoid page JS layout calculation crashes)
+        # Block all non-essential resources:
+        # - images/media/fonts: not needed for HTML parsing
+        # - stylesheet: we only parse DOM structure, not visual layout (safe to block)
+        # - tracking/analytics scripts: blocked by URL pattern
+        BLOCKED_TYPES = {"image", "font", "media", "stylesheet"}
+        BLOCKED_URL_PATTERNS = (
+            "google-analytics", "googletagmanager", "doubleclick",
+            "fbevents", "hotjar", "clarity.ms", "sentry.io",
+        )
         def handle_route(route):
-            if route.request.resource_type in ["image", "font", "media"]:
+            rt = route.request.resource_type
+            url = route.request.url
+            if rt in BLOCKED_TYPES:
+                route.abort()
+            elif any(pat in url for pat in BLOCKED_URL_PATTERNS):
                 route.abort()
             else:
                 route.continue_()
@@ -688,7 +743,7 @@ def scrape_and_populate_db(search_term, limit=25):
 
         try:
             page.goto(search_url, wait_until="domcontentloaded", timeout=30000)
-            # Wait briefly for product cards to appear
+            # Wait for product cards to appear in the DOM
             try:
                 page.wait_for_selector('a[href*="/p/"]', timeout=10000)
             except Exception:
@@ -696,20 +751,32 @@ def scrape_and_populate_db(search_term, limit=25):
             time.sleep(1)
             html_content = page.content()
         except Exception as nav_err:
-            browser.close()
             err = str(nav_err)
             if "ERR_INTERNET_DISCONNECTED" in err or "net::ERR_" in err:
                 raise RuntimeError("Internet connection is disconnected. Please check your network connection and try again.")
             raise RuntimeError(f"Failed to load Flipkart search page: {nav_err}")
         finally:
-            browser.close()
+            # Explicit cleanup order: page → context → browser
+            # Releasing in reverse creation order ensures no dangling handles leak memory
+            try:
+                page.close()
+            except Exception:
+                pass
+            try:
+                context.close()
+            except Exception:
+                pass
+            try:
+                browser.close()
+            except Exception:
+                pass
 
     if not html_content:
         raise RuntimeError("Browser returned empty page content.")
 
-    soup = BeautifulSoup(html_content, 'lxml')
 
     # Flipkart uses several different card layouts — try multiple known selectors
+    soup = BeautifulSoup(html_content, 'lxml')
     product_cards = (
         soup.select('div[data-id]') or
         soup.select('div._1AtVbE') or
