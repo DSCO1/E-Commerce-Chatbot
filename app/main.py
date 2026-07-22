@@ -586,33 +586,6 @@ with st.sidebar:
         st.rerun()
     st.markdown('</div>', unsafe_allow_html=True)
 
-    # Section 1: Flipkart Live Scraper
-    st.markdown("""<div class="right-panel-divider"></div>
-<div class="sidebar-header">
-Flipkart Scraper
-<span class="card-header-badge-live" style="float: right; margin-top: -2px;">
-<span class="card-header-badge-dot"></span>Live
-</span>
-</div>
-<div style="font-size:12.5px; color:#718096; margin-bottom:14px; margin-top:4px;">
-Scrape live product pages and load directly into database.
-</div>""", unsafe_allow_html=True)
-    
-    sync_category = st.text_input("Search Term:", value="laptops", key="sb_scraper_term")
-    sync_limit = st.slider("Products to scrape:", min_value=5, max_value=50, value=25, step=5, key="sb_scraper_limit")
-    
-    if st.button("🚀 Start Scraping", key="sb_start_scraping", use_container_width=True):
-        with st.status(f"Searching '{sync_category}' on Flipkart...", expanded=True) as status:
-            try:
-                num_inserted = scrape_and_populate_db(sync_category, sync_limit)
-                if num_inserted > 0:
-                    status.update(label=f"Successfully loaded {num_inserted} products!", state="complete")
-                    st.rerun()
-                else:
-                    status.update(label="Scraping returned no products.", state="error")
-            except Exception as e:
-                status.update(label=f"Scraping failed: {e}", state="error")
-                
     st.markdown('<div class="right-panel-divider"></div>', unsafe_allow_html=True)
     
     # Section 2: Database Catalog Summary Grid (Dynamic from DB)
@@ -767,53 +740,7 @@ with col_chat:
                             st.session_state["delete_msg_idx"] = idx
                             st.rerun()
                 
-                # Render product carousel
-                if "products" in msg and msg["products"]:
-                    carousel_html = '<div class="product-carousel">'
-                    for p in msg["products"]:
-                        title = p.get('title', 'Unknown Product')
-                        brand = p.get('brand', 'Generic')
-                        price = p.get('price', 0)
-                        discount_rate = p.get('discount', 0.0)
-                        rating = p.get('avg_rating', 0.0)
-                        link = p.get('product_link', '#')
-                        
-                        orig_price = int(price / (1 - discount_rate)) if discount_rate > 0 else price
-                        discount_pct = int(discount_rate * 100)
-                        image = get_product_image(p)
-                        specs = extract_specs_from_title(title)
-                        
-                        badge = "Best Offer"
-                        if rating >= 4.4:
-                            badge = "Best Overall"
-                        elif discount_pct >= 25:
-                            badge = "Value Pick"
-                        elif price < 15000:
-                            badge = "Budget Choice"
-                            
-                        carousel_html += f"""<div class="product-card">
-<div class="product-badge">{badge}</div>
-<div class="product-favorite-icon">♡</div>
-<div class="product-image-container">
-<img class="product-image" src="{image}" alt="{title}">
-</div>
-<div>
-<div class="product-title">{title}</div>
-<div class="product-specs">{specs}</div>
-<div class="product-price-row">
-<div class="product-price">₹{price:,}</div>
-{f'<div class="product-old-price">₹{orig_price:,}</div>' if discount_pct > 0 else ''}
-{f'<div class="product-discount">{discount_pct}% off</div>' if discount_pct > 0 else ''}
-</div>
-<div class="product-rating">★ {rating:.1f}</div>
-</div>
-<div class="product-actions">
-<a class="product-btn-solid" href="{link}" target="_blank">View Details</a>
-<a class="product-btn-outline" href="{link}" target="_blank">Buy Now</a>
-</div>
-</div>"""
-                    carousel_html += '</div>'
-                    st.markdown(carousel_html, unsafe_allow_html=True)
+                pass
                     
         # Inline Chat Input using Form
         with st.container():
@@ -1023,53 +950,7 @@ if st.session_state["active_page"] == "Chat" and st.session_state.messages and s
             with st.spinner("Analyzing database and live products..."):
                 response_text, products = ask(last_query)
                 st.markdown(response_text)
-                
-                if products:
-                    carousel_html = '<div class="product-carousel">'
-                    for p in products:
-                        title = p.get('title', 'Unknown Product')
-                        brand = p.get('brand', 'Generic')
-                        price = p.get('price', 0)
-                        discount_rate = p.get('discount', 0.0)
-                        rating = p.get('avg_rating', 0.0)
-                        link = p.get('product_link', '#')
-                        
-                        orig_price = int(price / (1 - discount_rate)) if discount_rate > 0 else price
-                        discount_pct = int(discount_rate * 100)
-                        image = get_product_image(p)
-                        specs = extract_specs_from_title(title)
-                        
-                        badge = "Best Offer"
-                        if rating >= 4.4:
-                            badge = "Best Overall"
-                        elif discount_pct >= 25:
-                            badge = "Value Pick"
-                        elif price < 15000:
-                            badge = "Budget Choice"
-                            
-                        carousel_html += f"""<div class="product-card">
-<div class="product-badge">{badge}</div>
-<div class="product-favorite-icon">♡</div>
-<div class="product-image-container">
-<img class="product-image" src="{image}" alt="{title}">
-</div>
-<div>
-<div class="product-title">{title}</div>
-<div class="product-specs">{specs}</div>
-<div class="product-price-row">
-<div class="product-price">₹{price:,}</div>
-{f'<div class="product-old-price">₹{orig_price:,}</div>' if discount_pct > 0 else ''}
-{f'<div class="product-discount">{discount_pct}% off</div>' if discount_pct > 0 else ''}
-</div>
-<div class="product-rating">★ {rating:.1f}</div>
-</div>
-<div class="product-actions">
-<a class="product-btn-solid" href="{link}" target="_blank">View Details</a>
-<a class="product-btn-outline" href="{link}" target="_blank">Buy Now</a>
-</div>
-</div>"""
-                    carousel_html += '</div>'
-                    st.markdown(carousel_html, unsafe_allow_html=True)
+                pass
                     
             st.session_state.messages.append({
                 "role": "assistant",

@@ -90,7 +90,10 @@ CRITICAL QUERY ACCURACY RULES:
    CRITICAL: Do NOT use this phone filter or its NOT LIKE exclusions when the user is asking for phone ACCESSORIES like "back cover", "case", "screen protector", "charger", etc. If the user asks for a "Nothing 3 back cover" or "iPhone 15 case", search for the accessory type directly (e.g., `title LIKE '%back%' AND title LIKE '%cover%' AND title LIKE '%nothing%'`). Do NOT add `NOT LIKE '%cover%'` or `NOT LIKE '%case%'` when the user is explicitly asking for covers or cases.
 7. HYPHENATED WORDS OR MODEL CODES (CRITICAL): If the user question contains any hyphenated terms, model codes, or combined alphanumeric descriptors (e.g., "samsung-s24", "oneplus-12r", "split-ac", "s24-ultra"), you MUST split them at the hyphen or word boundaries and search for each term/code individually using AND operators (e.g., `title LIKE '%samsung%' AND title LIKE '%s24%'`). Never search for hyphenated terms as a single literal string (like `title LIKE '%samsung-s24%'` or `title LIKE '%s24-ultra%'`) because product titles in the database do not contain hyphens and instead list them as separate words (e.g., "Samsung Galaxy S24 Ultra").
 8. COMPOUND AND SPLIT WORDS (CRITICAL): E-commerce queries often use compound terms (e.g., "backcover", "powerbank", "smartwatch", "earphone", "aircooler", "soundbar") where listings in the database use separate words (e.g., "back cover", "power bank", "smart watch", "ear phone", "air cooler", "sound bar"). When the user asks for such terms, you MUST search for both the compound version and the split version using OR and AND conditions. For example, for "backcover" or "back cover", you MUST use: `(title LIKE '%backcover%' OR (title LIKE '%back%' AND title LIKE '%cover%'))`. Similarly, for "powerbank", use: `(title LIKE '%powerbank%' OR (title LIKE '%power%' AND title LIKE '%bank%'))`.
-9. AUDIO GEAR SYNONYMS (CRITICAL): When the user asks for "earbuds" or "buds" (such as "nothing earbuds" or "samsung buds"), they might be listed as "Buds" or "Ear" or "Earbuds" or "Earphones". You MUST search for "earbud", "buds", "earphone", "headphone", or the standalone word "ear" using OR conditions. For example, to search for "Nothing earbuds", you MUST generate: `title LIKE '%nothing%' AND (title LIKE '%earbud%' OR title LIKE '%buds%' OR title LIKE '%earphone%' OR title LIKE '%headphone%' OR title LIKE '% ear %' OR title LIKE 'ear %' OR title LIKE '% ear')`.
+9. AUDIO GEAR SEPARATION (CRITICAL): Do NOT mix different types of audio gear. Differentiate precisely:
+   - For "earbuds" / "buds" / "tws": use `(title LIKE '%earbud%' OR title LIKE '%buds%' OR title LIKE '%tws%' OR title LIKE '% ear %' OR title LIKE 'ear %' OR title LIKE '% ear')`. Do NOT include "headphone" or "earphone".
+   - For "headphones": use `(title LIKE '%headphone%')`. Do NOT include "headset" (to avoid matching TWS earbud headsets), "earbud", "buds", "tws", "earphone", or "neckband".
+   - For "earphones" / "neckband": use `(title LIKE '%earphone%' OR title LIKE '%neckband%')`. Do NOT include "headphone", "earbud", or "buds".
 10. ACCESSORY-AWARE QUERIES (MOST CRITICAL): When the user asks for product ACCESSORIES (like "back cover", "case", "screen protector", "tempered glass", "charger", "cable", "earbuds", "earphone", "headphone", "sleeve", "bag", "stand", "keyboard", "mouse"), you MUST:
     a) Search for the accessory type in the title (e.g., `title LIKE '%back%' AND title LIKE '%cover%'`).
     b) If the user specifies a device brand or model (e.g., "Samsung S24", "Nothing 3", "iPhone 15"), add those as additional AND conditions on the TITLE column ONLY (e.g., `AND title LIKE '%samsung%' AND title LIKE '%s24%'`). 
@@ -101,7 +104,7 @@ CRITICAL QUERY ACCURACY RULES:
     - "nothing 3 back cover under 500" -> `SELECT * FROM product WHERE title LIKE '%back%' AND title LIKE '%cover%' AND title LIKE '%nothing%' AND price < 500`
     - "samsung s24 case" -> `SELECT * FROM product WHERE title LIKE '%case%' AND title LIKE '%samsung%' AND title LIKE '%s24%'`
     - "iphone 15 screen protector" -> `SELECT * FROM product WHERE title LIKE '%screen%' AND title LIKE '%protector%' AND title LIKE '%iphone%' AND title LIKE '%15%'`
-    - "boat earbuds under 1000" -> `SELECT * FROM product WHERE (title LIKE '%earbud%' OR title LIKE '%buds%' OR title LIKE '%earphone%' OR title LIKE '%headphone%' OR title LIKE '% ear %' OR title LIKE 'ear %' OR title LIKE '% ear') AND title LIKE '%boat%' AND price < 1000`
+    - "boat earbuds under 1000" -> `SELECT * FROM product WHERE (title LIKE '%earbud%' OR title LIKE '%buds%' OR title LIKE '%tws%' OR title LIKE '% ear %' OR title LIKE 'ear %' OR title LIKE '% ear') AND title LIKE '%boat%' AND price < 1000`
     - "spigen case for samsung s25" -> `SELECT * FROM product WHERE title LIKE '%case%' AND title LIKE '%samsung%' AND title LIKE '%s25%' AND brand LIKE '%spigen%'`
 11. COMMON-WORD BRAND NAMES (CRITICAL): Many popular e-commerce brands have names that are common English words. You MUST recognize and preserve these as brand names when they appear in product queries, and filter for them using `title LIKE '%brand%'`. Common-word brands include: "Nothing" (phone brand), "Boat" (audio brand), "Noise" (smartwatch brand), "Realme", "OnePlus", "Apple", "Google", "Fire-Boltt", "Zebronics", "Portronics", "Ambrane", "Redmi", "POCO". Never ignore or drop brand names from the query. For example, "nothing 3 back cover" must include `title LIKE '%nothing%'` in the WHERE clause. Remember: for accessories, the device brand belongs in the title search, not the brand column (see Rule 10e).
 12. FILTER BY TITLE ONLY (CRITICAL): Do NOT attempt to filter by the 'category_name' or 'category_id' columns in the WHERE clause. Always filter for product type/categories using the `title` column with `LIKE` operators (e.g. `title LIKE '%microwave%' AND title LIKE '%oven%'`), as category names are dynamically assigned, pluralized, and may vary.
@@ -113,13 +116,22 @@ Create a single SQL query for the question provided.
 The query should have all the fields in SELECT clause (i.e. SELECT *)
 
 Just the SQL query is needed, nothing more. Always provide the SQL in between the <SQL></SQL> tags.
-If the input is a greeting (e.g. "hi", "hello", "hey", "good morning") or general conversational chitchat unrelated to product database queries, do NOT generate any <SQL></SQL> tags or queries. Instead, reply directly with a friendly, conversational response assisting the user on what they can ask (e.g., "Hello! I can help you search our products or answer store FAQs. What are you looking for today?")."""
+If the input is a greeting (e.g. "hi", "hello", "hey", "good morning") or general conversational chitchat unrelated to product database queries, do NOT generate any <SQL></SQL> tags or queries. Instead, reply directly with a friendly, conversational response assisting the user on what they can ask (e.g., "Hello! I can help you search our products or answer store FAQs. What are you looking for today?").
+CRITICAL: If the user asks about the availability of any product, even if it is a general question (e.g. "Do you sell typewriters?", "Do you have gaming chairs?", "Do you have mechanical keyboards?"), you MUST treat it as a product search query and generate the appropriate SELECT query. Never treat product availability questions as chitchat.
+"""
 
 
 comprehension_prompt = """You are an expert in understanding the context of the question and replying based on the data pertaining to the question provided. You will be provided with Question: and Data:. The data will be in the form of an array or a dataframe or dict. Reply based on only the data provided as Data for answering the question asked as Question. Do not write anything like 'Based on the data' or any other technical words. Just a plain simple natural language response.
 The Data would always be in context to the question asked. For example is the question is "What is the average rating?" and data is "4.3", then answer should be "The average rating for the product is 4.3". So make sure the response is curated with the question and data. Make sure to note the column names to have some context, if needed, for your response.
 There can also be cases where you are given an entire dataframe in the Data: field. Always remember that the data field contains the answer of the question asked. All you need to do is to always reply in the following format when asked about a product: 
-Product title, price in indian rupees, discount percentage, rating, and then the actual product link formatted as a markdown hyperlink [View Product](URL). Replace the "URL" with the actual value from the 'product_link' column. Take care that all the products are listed in list format, one line after the other. Not as a paragraph. Never output the literal text '<link>'.
+Product title, price in indian rupees, discount percentage, rating, and then the actual product link formatted as a markdown hyperlink [View Product](URL). Replace the "URL" with the actual value from the 'product_link' column. 
+
+CRITICAL LIST FORMATTING RULES:
+1. ALWAYS use a numbered list (e.g. 1., 2., 3.).
+2. You MUST use a single newline (one line break) between each product in the list so they are rendered as a compact vertical list without any empty line gaps between products.
+3. Each product MUST be on its own line. Do NOT write them in a single paragraph.
+4. Never output the literal text '<link>'.
+
 For example:
 1. ASUS ExpertBook P1 Laptop: Rs. 45,990 (50% off), Rating: 4.6 [View Product](https://www.flipkart.com/asus-expertbook-p1...)
 2. Samsung Galaxy Book4: Rs. 62,990 (21% off), Rating: 4.3 [View Product](https://www.flipkart.com/samsung-galaxy-book4...)
@@ -271,24 +283,23 @@ CRITICAL RULES:
 1. BRAND NAMES (CRITICAL): If the user mentions a specific brand name, you MUST include the brand in your search term. This is essential because we need to scrape brand-specific products from Flipkart.
    - Note that brand names can be common words (e.g. "Nothing", "Apple", "Boat", "Realme", "Google", "Noise", "Fire-Boltt"). You MUST treat them as brand names and preserve them in the search term. For example, "nothing 3 back cover" -> "nothing 3 back cover", "boat earbuds" -> "boat earbuds".
 2. MODEL NUMBERS / CODES: Preserve model numbers, versions, or specs (e.g. "s24", "15 pro", "2a", "3", "v15") in the search term.
-3. REMOVE CONSTRAINTS: Do not include price constraints (like "under 500", "below 10000"), ratings, or conversational preambles in the search term.
+3. REMOVE CONSTRAINTS BUT PRESERVE KEY ATTRIBUTES (CRITICAL): Do not include price constraints (like "under 500", "below 10000"), ratings, or conversational preambles in the search term. However, you MUST preserve key variant attributes like colors (e.g. "red", "black", "pink", "purple"), connection types ("wireless", "wired"), switch types ("blue switch"), and features ("rgb", "led", "smart") in the search term so that the live scraper searches Flipkart for the exact target variant.
 
 Examples:
-- "Show me some watches" -> "watches"
+- "Show me the cheapest red gaming mouse." -> "red gaming mouse"
+- "I need a black washing machine." -> "black washing machine"
+- "Do you sell project screens?" -> "project screen"
+- "Find wired mechanical keyboards with blue switches." -> "wired mechanical keyboard blue switches"
 - "Do you have split ACs?" -> "split ac"
 - "I want to buy running shoes" -> "running shoes"
 - "List some budget laptops under 30000" -> "laptops"
 - "Which is the cheapest Symphony cooler?" -> "Symphony cooler"
 - "Show me iphone 15" -> "iphone 15"
-- "Are there ceiling fans?" -> "ceiling fan"
-- "Show me double door fridges" -> "refrigerator"
-- "Show me washing machines" -> "washing machine"
 - "Show me Thomson smart tv under 15000" -> "Thomson smart tv"
 - "Show me smart phone under 20000 of samsung brand" -> "Samsung phone"
 - "show me nothing 3 back cover under 500 rupee" -> "nothing 3 back cover"
 - "do you have nothing phone 2a" -> "nothing phone 2a"
 - "I want a Boat earbuds" -> "Boat earbuds"
-- "Do you have Realme phones?" -> "Realme phone"
 
 Return ONLY the plain text search term (maximum 4 words), nothing else. Do not wrap in quotes or add preamble. If the question is not about products or is chitchat, return "None".
 
@@ -310,39 +321,127 @@ QUESTION: {question}"""
     return clean_think_block(res)
 
 
+def is_similar(w1, w2):
+    # Quick length check
+    if abs(len(w1) - len(w2)) > 2:
+        return False
+    # Levenshtein distance
+    m, n = len(w1), len(w2)
+    dp = [[0] * (n + 1) for _ in range(m + 1)]
+    for i in range(m + 1): dp[i][0] = i
+    for j in range(n + 1): dp[0][j] = j
+    for i in range(1, m + 1):
+        for j in range(1, n + 1):
+            if w1[i-1] == w2[j-1]:
+                dp[i][j] = dp[i-1][j-1]
+            else:
+                dp[i][j] = 1 + min(dp[i-1][j], dp[i][j-1], dp[i-1][j-1])
+    return dp[m][n] <= 2
+
+
+def filter_relevant_products(products_list, search_term):
+    if not products_list or not search_term:
+        return products_list
+        
+    import re
+    # Split search term into words
+    words = re.findall(r'\b[a-zA-Z0-9]+\b', search_term.lower())
+    
+    GENERIC_WORDS = {
+        'cooker', 'cookers', 'shoe', 'shoes', 'watch', 'watches', 'phone', 'phones', 
+        'mobile', 'mobiles', 'laptop', 'laptops', 'notebook', 'notebooks', 'chromebook', 
+        'macbook', 'cover', 'covers', 'case', 'cases', 'bag', 'bags', 'fan', 'fans', 'cooler', 
+        'coolers', 'ac', 'tv', 'tvs', 'television', 'refrigerator', 'refrigerators', 'fridge', 
+        'fridges', 'washing', 'machine', 'machines', 'dryer', 'dryers', 'washer', 'washers', 
+        'charger', 'chargers', 'cable', 'cables', 'adapter', 'adapters', 'stand', 'stands', 
+        'keyboard', 'keyboards', 'mouse', 'mice', 'speaker', 'speakers', 'soundbar', 'soundbars', 
+        'product', 'products', 'item', 'items'
+    }
+    
+    STOP_WORDS = {
+        'show', 'me', 'buy', 'online', 'best', 'cheap', 'top', 'under', 'rs', 'rupee', 'rupees', 
+        'brand', 'for', 'with', 'and', 'or', 'of', 'in', 'the', 'a', 'an', 'to', 'from', 'at', 
+        'on', 'by', 'about'
+    }
+    
+    distinctive_keywords = [w for w in words if w not in GENERIC_WORDS and w not in STOP_WORDS]
+    if not distinctive_keywords:
+        return products_list
+        
+    filtered = []
+    for p in products_list:
+        title_lower = p.get('title', '').lower()
+        brand_lower = p.get('brand', '').lower()
+        title_words = re.findall(r'\b[a-zA-Z0-9]+\b', title_lower + ' ' + brand_lower)
+        
+        matches_all = True
+        for kw in distinctive_keywords:
+            if kw in title_words or kw in title_lower:
+                continue
+            found_fuzzy = False
+            for tw in title_words:
+                if is_similar(kw, tw):
+                    found_fuzzy = True
+                    break
+            if not found_fuzzy:
+                matches_all = False
+                break
+        if matches_all:
+            filtered.append(p)
+            
+    return filtered
+
+
+def extract_sql_command(sql_query):
+    if not sql_query:
+        return ""
+    pattern = "<SQL>(.*?)</SQL>"
+    matches = re.findall(pattern, sql_query, re.DOTALL)
+    if matches:
+        return matches[0].strip()
+        
+    cleaned = sql_query.strip()
+    if cleaned.upper().startswith("SELECT") and "FROM" in cleaned.upper():
+        return cleaned
+        
+    match = re.search(r'(SELECT\s+.*?\s+FROM\s+.*)', cleaned, re.DOTALL | re.IGNORECASE)
+    if match:
+        cmd = match.group(1).strip()
+        if cmd.endswith("```"):
+            cmd = cmd[:-3].strip()
+        if "</SQL>" in cmd:
+            cmd = cmd.split("</SQL>")[0].strip()
+        return cmd
+        
+    return ""
+
+
 def sql_chain(question):
     try:
         sql_query = generate_sql_query(question)
-        pattern = "<SQL>(.*?)</SQL>"
-        matches = re.findall(pattern, sql_query, re.DOTALL)
+        sql_command = extract_sql_command(sql_query)
+        
+        response = None
+        if sql_command and sql_command.upper().startswith("SELECT"):
+            try:
+                response = run_query(sql_command)
+            except Exception as sql_err:
+                print(f"SQL execution error in sql_chain: {sql_err}")
+                response = None
 
-        sql_command = matches[0].strip() if (len(matches) > 0) else ""
-        if not sql_command or not sql_command.upper().startswith("SELECT"):
-            cleaned_response = sql_query.replace("<SQL>", "").replace("</SQL>", "").strip()
-            if cleaned_response:
-                return cleaned_response
-            return "I'm sorry, I couldn't understand your request. You can ask me about our products, store FAQs, shipping, or policies."
-
-        print(sql_command)
-
-        response = run_query(sql_command)
-        if response is None:
-            return "Sorry, there was a problem executing the product search."
-
-        total_results = len(response)
+        total_results = len(response) if response is not None else 0
 
         # Auto-scrape on demand if no products match the query locally
         if total_results == 0:
             search_term = extract_category_or_search_term(question)
             if search_term and search_term.lower() != "none":
-                print(f"No products found locally. Attempting to scrape Flipkart live for: '{search_term}'...")
+                print(f"No products found locally or SQL failed. Attempting to scrape Flipkart live for: '{search_term}'...")
                 try:
-                    num_scraped = scrape_and_populate_db(search_term, limit=8)
+                    num_scraped, scraped_products = scrape_and_populate_db(search_term, limit=8)
                     if num_scraped > 0:
-                        # Retry query after scraping
-                        response = run_query(sql_command)
-                        if response is not None:
-                            total_results = len(response)
+                        filtered_products = filter_relevant_products(scraped_products, search_term)
+                        response = pd.DataFrame(filtered_products)
+                        total_results = len(response)
                 except Exception as scrape_err:
                     print(f"On-demand automatic scraping failed: {scrape_err}")
                     err_msg = str(scrape_err)
@@ -352,6 +451,9 @@ def sql_chain(question):
                         return "I tried to search Flipkart live, but name resolution failed. Please check your internet connection."
                     elif "Connection timed out" in err_msg or "ERR_CONNECTION_TIMED_OUT" in err_msg:
                         return "I tried to search Flipkart live, but the connection timed out. Flipkart may be currently offline or blocking automated requests."
+
+        if response is None or total_results == 0:
+            return "I'm sorry, I couldn't find any products matching your search. What else can I help you find?"
 
         if 'product_link' in response.columns:
             response['product_link'] = response['product_link'].apply(lambda x: x.split('?')[0] if isinstance(x, str) else x)
@@ -378,36 +480,29 @@ def sql_chain(question):
 def sql_chain_structured(question):
     try:
         sql_query = generate_sql_query(question)
-        pattern = "<SQL>(.*?)</SQL>"
-        matches = re.findall(pattern, sql_query, re.DOTALL)
+        sql_command = extract_sql_command(sql_query)
+        
+        response = None
+        if sql_command and sql_command.upper().startswith("SELECT"):
+            try:
+                response = run_query(sql_command)
+            except Exception as sql_err:
+                print(f"SQL execution error in sql_chain_structured: {sql_err}")
+                response = None
 
-        sql_command = matches[0].strip() if (len(matches) > 0) else ""
-        if not sql_command or not sql_command.upper().startswith("SELECT"):
-            cleaned_response = sql_query.replace("<SQL>", "").replace("</SQL>", "").strip()
-            if cleaned_response:
-                return cleaned_response, []
-            return "I'm sorry, I couldn't understand your request. You can ask me about our products, store FAQs, shipping, or policies.", []
-
-        print(sql_command)
-
-        response = run_query(sql_command)
-        if response is None:
-            return "Sorry, there was a problem executing the product search.", []
-
-        total_results = len(response)
+        total_results = len(response) if response is not None else 0
 
         # Auto-scrape on demand if no products match the query locally
         if total_results == 0:
             search_term = extract_category_or_search_term(question)
             if search_term and search_term.lower() != "none":
-                print(f"No products found locally. Attempting to scrape Flipkart live for: '{search_term}'...")
+                print(f"No products found locally or SQL failed. Attempting to scrape Flipkart live for: '{search_term}'...")
                 try:
-                    num_scraped = scrape_and_populate_db(search_term, limit=8)
+                    num_scraped, scraped_products = scrape_and_populate_db(search_term, limit=8)
                     if num_scraped > 0:
-                        # Retry query after scraping
-                        response = run_query(sql_command)
-                        if response is not None:
-                            total_results = len(response)
+                        filtered_products = filter_relevant_products(scraped_products, search_term)
+                        response = pd.DataFrame(filtered_products)
+                        total_results = len(response)
                 except Exception as scrape_err:
                     print(f"On-demand automatic scraping failed: {scrape_err}")
                     err_msg = str(scrape_err)
@@ -423,8 +518,54 @@ def sql_chain_structured(question):
                         import traceback
                         tb_str = traceback.format_exc()
                         return f"An error occurred while automatically searching Flipkart live for **{search_term}**:\n\n```\n{err_msg}\n```\n\nTraceback:\n```\n{tb_str}\n```", []
+        else:
+            # Check for mentioned but missing specific brands, colors, or specifications
+            try:
+                words = re.findall(r'\b[a-zA-Z0-9-]+\b', question.lower())
+                brands = {'dell', 'hp', 'lenovo', 'asus', 'acer', 'apple', 'samsung', 'realme', 'oneplus', 'xiaomi', 'redmi', 'poco', 'nothing', 'boat', 'noise', 'fire-boltt', 'zebronics', 'portronics', 'lg', 'whirlpool', 'haier', 'godrej', 'voltas', 'daikin', 'panasonic', 'hitachi', 'sony', 'philips', 'havells', 'bajaj', 'orient', 'crompton', 'ushas', 'symphony', 'kenstar', 'hindware'}
+                colors = {'pink', 'purple', 'red', 'blue', 'green', 'yellow', 'white', 'black', 'grey', 'silver', 'gold', 'orange', 'brown'}
+                specs = {'wireless', 'mechanical', 'rgb', 'typewriter', 'projector', 'gaming', 'switches'}
+                
+                target_words = (brands | colors | specs)
+                mentioned_targets = [w for w in words if w in target_words]
+                
+                all_titles_lower = " ".join(response['title'].astype(str).str.lower().tolist())
+                missing_targets = []
+                for target in mentioned_targets:
+                    if not re.search(rf'\b{re.escape(target)}\b', all_titles_lower):
+                        missing_targets.append(target)
+                
+                if missing_targets:
+                    base_product = extract_category_or_search_term(question)
+                    if base_product and base_product.lower() != "none":
+                        # Strip existing missing targets from base_product if any to avoid duplication
+                        cleaned_base = base_product.lower()
+                        for target in missing_targets:
+                            cleaned_base = cleaned_base.replace(target, '').strip()
+                        
+                        all_scraped_products = []
+                        for target in missing_targets:
+                            search_query = f"{target} {cleaned_base}".strip()
+                            print(f"Product variant/brand '{target}' is missing from local results. Scraping Flipkart live for: '{search_query}'...")
+                            try:
+                                num_scraped, scraped_products = scrape_and_populate_db(search_query, limit=8)
+                                if num_scraped > 0:
+                                    filtered_products = filter_relevant_products(scraped_products, search_query)
+                                    all_scraped_products.extend(filtered_products)
+                            except Exception as scrape_err:
+                                print(f"On-demand variant scraping failed for '{search_query}': {scrape_err}")
+                                
+                        if all_scraped_products:
+                            scraped_df = pd.DataFrame(all_scraped_products)
+                            response = pd.concat([response, scraped_df], ignore_index=True)
+                            total_results = len(response)
+            except Exception as variant_check_err:
+                print(f"Error during missing variant check: {variant_check_err}")
 
 
+
+        if response is None or total_results == 0:
+            return "I'm sorry, I couldn't find any products matching your search. What else can I help you find?", []
 
         if 'product_link' in response.columns:
             response['product_link'] = response['product_link'].apply(lambda x: x.split('?')[0] if isinstance(x, str) else x)
@@ -717,13 +858,13 @@ def scrape_and_populate_db(search_term, limit=25):
                 img = card.select_one(sel)
                 if img:
                     src = img.get('src', '')
-                    if src and 'logo' not in src.lower() and not any(sz in src for sz in exclude_img_sizes):
+                    if src and 'logo' not in src.lower() and 'placeholder' not in src.lower() and not src.startswith('data:image') and not any(sz in src for sz in exclude_img_sizes):
                         image_url = src
                         break
             if not image_url:
                 for img in card.find_all('img'):
                     src = img.get('src', '')
-                    if src and ('rukminim' in src or 'flixcart.com/image' in src) and not any(sz in src for sz in exclude_img_sizes) and 'logo' not in src.lower():
+                    if src and ('rukminim' in src or 'flixcart.com/image' in src) and 'placeholder' not in src.lower() and not src.startswith('data:image') and not any(sz in src for sz in exclude_img_sizes) and 'logo' not in src.lower():
                         image_url = src
                         break
 
@@ -738,7 +879,7 @@ def scrape_and_populate_db(search_term, limit=25):
 
     if not complete_product_details:
         print(f"No product cards found for '{search_term}' — Flipkart may have changed its HTML structure or blocked the request.")
-        return 0
+        return 0, []
 
     # Insert/Update using modular components
     from database_service import get_connection
@@ -753,6 +894,7 @@ def scrape_and_populate_db(search_term, limit=25):
     product_repository = ProductRepository(get_connection)
 
     success_count = 0
+    saved_products_list = []
     for item in complete_product_details:
         link, title, brand, price, discount, avg_rating, total_ratings, image_url, description = item
         brand = str(brand).strip()
@@ -796,13 +938,14 @@ def scrape_and_populate_db(search_term, limit=25):
 
         product_repository.save_product(product_data)
         success_count += 1
+        saved_products_list.append(product_data)
         print(f"\n[SCRAPER-PIPELINE] Product: {title[:50]}...")
         print(f"  Detected Category: {normalized_cat} (Confidence: {confidence*100:.1f}%)")
         print(f"  Reason: {reason}")
 
     category_manager.recalculate_all_counts()
     print(f"Successfully scraped, classified, and processed {success_count} products for '{search_term}'!")
-    return success_count
+    return success_count, saved_products_list
 
 
 def extract_specs_from_title(title):

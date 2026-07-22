@@ -107,7 +107,7 @@
     "slug": "sunglass",
     "super_category": "Fashion",
     "keywords": ["sunglasses", "sunglass", "spectacles", "spectacle", "goggles", "eyewear", "frame"],
-    "negative_keywords": ["case", "pouch", "cleaning cloth", "spray", "chain", "strap"],
+    "negative_keywords": ["case", "pouch", "cleaning cloth", "spray", "chain", "strap", "keyboard", "laptop", "phone", "pc", "computer", "cabinet"],
     "image": "https://images.unsplash.com/photo-1511499767150-a48a237f0083?w=200&q=80",
     "icon": "🕶️"
   },
@@ -158,5 +158,13 @@
     "negative_keywords": ["analog watch", "wall clock", "charger", "strap", "case", "screen protector", "stand"],
     "image": "https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=200&q=80",
     "icon": "⌚"
+  },
+  "Keyboards": {
+    "slug": "keyboard",
+    "super_category": "Electronics",
+    "keywords": ["keyboard", "keyboards", "mechanical keyboard", "wireless keyboard", "rgb keyboard", "gaming keyboard"],
+    "negative_keywords": ["case", "cover", "cleaning kit", "sleeve", "bag", "stand", "mouse", "laptop"],
+    "image": "https://images.unsplash.com/photo-1587829741301-dc798b83add3?w=200&q=80",
+    "icon": "⌨️"
   }
 }
