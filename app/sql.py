@@ -661,6 +661,9 @@ def scrape_and_populate_db(search_term, limit=25):
                 '--disable-setuid-sandbox',
                 '--disable-dev-shm-usage',
                 '--disable-gpu',
+                '--single-process',
+                '--no-zygote',
+                '--disable-extensions',
             ]
         )
         context = browser.new_context(
@@ -673,9 +676,9 @@ def scrape_and_populate_db(search_term, limit=25):
         )
         page = context.new_page()
 
-        # Block images/fonts to speed up page load
+        # Block images/fonts to speed up page load (keeping stylesheets to avoid page JS layout calculation crashes)
         def handle_route(route):
-            if route.request.resource_type in ["image", "font", "media", "stylesheet"]:
+            if route.request.resource_type in ["image", "font", "media"]:
                 route.abort()
             else:
                 route.continue_()
