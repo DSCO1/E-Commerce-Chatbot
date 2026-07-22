@@ -942,8 +942,46 @@ def scrape_and_populate_db(search_term, limit=25):
         print(f"  Reason: {reason}")
 
     category_manager.recalculate_all_counts()
+    
+    # Run database pruning to keep database size under threshold
+    import os
+    db_max_products = int(os.environ.get("DB_MAX_PRODUCTS", 1750))
+    prune_database(get_connection, category_manager, max_products=db_max_products)
+
     print(f"Successfully scraped, classified, and processed {success_count} products for '{search_term}'!")
     return success_count, saved_products_list
+
+
+def prune_database(db_conn_factory, category_manager, max_products=1800):
+    try:
+        conn = db_conn_factory()
+        cursor = conn.cursor()
+        
+        # 1. Count total products
+        cursor.execute("SELECT COUNT(*) FROM product")
+        total_products = cursor.fetchone()[0]
+        
+        if total_products > max_products:
+            to_delete = total_products - max_products
+            print(f"[DB-PRUNE] Database size ({total_products}) exceeds limit ({max_products}). Deleting oldest {to_delete} products...")
+            
+            # 2. Get the IDs of the oldest products based on created_at
+            cursor.execute("SELECT id FROM product ORDER BY created_at ASC, id ASC LIMIT ?", (to_delete,))
+            ids_to_delete = [row[0] for row in cursor.fetchall()]
+            
+            if ids_to_delete:
+                placeholders = ",".join("?" for _ in ids_to_delete)
+                cursor.execute(f"DELETE FROM product WHERE id IN ({placeholders})", ids_to_delete)
+                conn.commit()
+                print(f"[DB-PRUNE] Successfully deleted {len(ids_to_delete)} oldest products.")
+                
+                # 3. Recalculate counts
+                category_manager.recalculate_all_counts()
+    except Exception as e:
+        print(f"[DB-PRUNE] Error during database pruning: {e}")
+    finally:
+        if 'conn' in locals():
+            conn.close()
 
 
 def extract_specs_from_title(title):
