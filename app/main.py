@@ -53,11 +53,42 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
+# Cache Playwright browser installation on app startup to prevent request timeouts
+@st.cache_resource
+def install_playwright_browsers():
+    import subprocess
+    import sys
+    import os
+    import tempfile
+    
+    os.environ["PLAYWRIGHT_BROWSERS_PATH"] = os.path.join(tempfile.gettempdir(), "playwright-browsers")
+    print("[INIT] Bootstrapping Playwright browser on startup...")
+    
+    # First, make sure playwright package is present
+    try:
+        from playwright.sync_api import sync_playwright
+    except ImportError:
+        print("[INIT] Installing playwright python package...")
+        subprocess.run([sys.executable, '-m', 'pip', 'install', 'playwright'], capture_output=True)
+        
+    # Download Chromium binary
+    try:
+        print(f"[INIT] Downloading Chromium binary to {os.environ['PLAYWRIGHT_BROWSERS_PATH']}...")
+        res = subprocess.run(
+            [sys.executable, '-m', 'playwright', 'install', 'chromium'],
+            capture_output=True, timeout=180
+        )
+        print(f"[INIT] Download finished. stdout: {res.stdout.decode(errors='ignore')}")
+    except Exception as e:
+        print(f"[INIT] Playwright installation error: {e}")
+
+install_playwright_browsers()
+
 # Load FAQs
 faqs_path = Path(__file__).parent / "Resources/FAQ.csv"
 ingest_faq_data(faqs_path)
 
-db_path = Path(__file__).parent / "db.sqlite"
+from database_service import db_path
 
 # Helper: Route and get response
 def ask(query):
@@ -643,6 +674,29 @@ View All Products ({total_products})
 </a>
 """, unsafe_allow_html=True)
 
+    st.markdown('<div class="right-panel-divider"></div>', unsafe_allow_html=True)
+
+    st.markdown('<div class="sidebar-header">Live Flipkart Scraper</div>', unsafe_allow_html=True)
+    with st.expander("🔍 Run Manual Scraper", expanded=False):
+        st.markdown("<p style='font-size:12px; color:#a0aec0; margin-bottom:8px;'>Manually download items from Flipkart directly into the database if the automated query gets blocked.</p>", unsafe_allow_html=True)
+        scrape_term = st.text_input("Product Search Term", placeholder="e.g. gaming laptop", key="manual_scrape_term")
+        scrape_limit = st.slider("Max Products to Fetch", min_value=1, max_value=25, value=8, key="manual_scrape_limit")
+        
+        if st.button("Start Scraping", key="manual_scrape_btn", use_container_width=True):
+            if scrape_term.strip():
+                with st.spinner(f"Scraping '{scrape_term}'..."):
+                    try:
+                        num_scraped, _ = scrape_and_populate_db(scrape_term.strip(), limit=scrape_limit)
+                        if num_scraped > 0:
+                            st.success(f"Successfully scraped and loaded {num_scraped} products!")
+                            st.rerun()
+                        else:
+                            st.warning("No products found. Flipkart might be blocking requests from this server.")
+                    except Exception as e:
+                        st.error(f"Scrape failed: {e}")
+            else:
+                st.error("Please enter a valid search term.")
+                
     st.markdown('<div class="right-panel-divider"></div>', unsafe_allow_html=True)
 
     # Status widget

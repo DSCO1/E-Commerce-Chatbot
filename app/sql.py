@@ -7,9 +7,10 @@ from pathlib import Path
 from dotenv import load_dotenv
 from pandas import DataFrame
 
-# Set custom writable path for playwright browsers inside workspace
+# Set custom writable path for playwright browsers inside system temp directory
 # to guarantee it works on read-only/serverless containers like Streamlit Sharing, Render, etc.
-os.environ["PLAYWRIGHT_BROWSERS_PATH"] = str(Path(__file__).parent / "playwright-browsers")
+import tempfile
+os.environ["PLAYWRIGHT_BROWSERS_PATH"] = os.path.join(tempfile.gettempdir(), "playwright-browsers")
 
 load_dotenv(Path(__file__).parent / ".env")
 
@@ -20,7 +21,7 @@ if not GROQ_MODEL:
     GROQ_MODEL = FALLBACK_MODELS[0]
     os.environ['GROQ_MODEL'] = GROQ_MODEL
 
-db_path = Path(__file__).parent / "db.sqlite"
+from database_service import db_path
 
 # --------------- Multi-Key Pool ---------------
 # Reads GROQ_API_KEY, GROQ_API_KEY_2, GROQ_API_KEY_3, ... from .env

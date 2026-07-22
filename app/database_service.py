@@ -1,8 +1,29 @@
 import sqlite3
 import os
+import shutil
+import tempfile
 from pathlib import Path
 
-db_path = Path(__file__).parent / "db.sqlite"
+def get_db_path() -> Path:
+    """Resolve database path, falling back to temp directory if local path is read-only."""
+    local_path = Path(__file__).parent / "db.sqlite"
+    try:
+        # Test if local folder is writable
+        test_file = local_path.parent / ".write_test"
+        test_file.touch()
+        test_file.unlink()
+        return local_path
+    except (IOError, PermissionError):
+        # Local folder is read-only. Fall back to temp folder.
+        temp_path = Path(tempfile.gettempdir()) / "db.sqlite"
+        if not temp_path.exists() and local_path.exists():
+            try:
+                shutil.copy2(local_path, temp_path)
+            except Exception as e:
+                print(f"[DB-FALLBACK] Failed to copy database to temp directory: {e}")
+        return temp_path
+
+db_path = get_db_path()
 
 def get_connection():
     """Return a connection to the SQLite database."""
